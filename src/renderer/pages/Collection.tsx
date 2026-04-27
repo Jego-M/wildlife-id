@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { Sighting } from "../../shared/types";
 
 const ghostBtn: React.CSSProperties = {
@@ -31,7 +31,7 @@ export default function Collection() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState("recent");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [selected, setSelected] = useState<Sighting | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const loadSightings = useCallback(async () => {
     setLoading(true);
@@ -63,9 +63,11 @@ export default function Collection() {
 
   const speciesCount = useMemo(() => new Set(sightings.map(s => s.scientific_name)).size, [sightings]);
 
+  const selected = selectedId !== null ? sightings.find(s => s.id === selectedId) ?? null : null;
+
   const handleDelete = async (id: number) => {
     await window.api.sightings.delete(id);
-    setSelected(null);
+    setSelectedId(null);
     loadSightings();
   };
 
@@ -137,16 +139,16 @@ export default function Collection() {
         {filtered.length === 0 ? (
           <EmptyResult onClear={() => setQuery("")} />
         ) : view === "grid" ? (
-          <GridView items={filtered} onOpen={setSelected} />
+          <GridView items={filtered} onOpen={(s) => setSelectedId(s.id)} />
         ) : (
-          <ListView items={filtered} onOpen={setSelected} />
+          <ListView items={filtered} onOpen={(s) => setSelectedId(s.id)} />
         )}
       </div>
 
       {selected && (
         <DetailDrawer
           item={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => setSelectedId(null)}
           onDelete={handleDelete}
           onUpdated={() => { loadSightings(); }}
         />
@@ -264,23 +266,36 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
     location: item.location ?? "",
     comments: item.comments ?? "",
   });
-  const [saving, setSaving] = useState(false);
 
-  const saveField = async (key: keyof typeof fields) => {
-    const value = fields[key] || null;
-    setSaving(true);
-    try {
-      const updated = await window.api.sightings.update(item.id, { [key]: value });
-      onUpdated();
-      return updated;
-    } finally {
-      setSaving(false);
+  // Ref always holds latest field values — avoids stale closure in save
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
+
+  const dirtyKeys = useRef<Set<string>>(new Set());
+
+  const markDirty = (key: string) => { dirtyKeys.current.add(key); };
+
+  const saveDirty = async () => {
+    const keys = Array.from(dirtyKeys.current);
+    if (keys.length === 0) return;
+    dirtyKeys.current.clear();
+    for (const key of keys) {
+      const value = fieldsRef.current[key as keyof typeof fields] || null;
+      try {
+        await window.api.sightings.update(item.id, { [key]: value });
+      } catch { /* best-effort on close */ }
     }
+    onUpdated();
+  };
+
+  const handleClose = async () => {
+    await saveDirty();
+    onClose();
   };
 
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", justifyContent: "flex-end" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(20,25,20,0.35)", animation: "fadeIn 180ms ease" }} />
+      <div onClick={handleClose} style={{ position: "absolute", inset: 0, background: "rgba(20,25,20,0.35)", animation: "fadeIn 180ms ease" }} />
       <div style={{ position: "relative", width: 440, height: "100%", background: "#fff", borderLeft: "0.5px solid var(--hair)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px -10px rgba(20,30,20,0.2)", animation: "slideIn 240ms cubic-bezier(.3,.7,.4,1)" }}>
         <div style={{ position: "relative", height: 240, flexShrink: 0, background: "#e8e4db" }}>
           <img
@@ -290,7 +305,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
           />
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)" }} />
-          <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, appearance: "none", border: 0, background: "rgba(20,25,20,0.5)", color: "#fff", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={handleClose} style={{ position: "absolute", top: 14, right: 14, appearance: "none", border: 0, background: "rgba(20,25,20,0.5)", color: "#fff", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </button>
           <div style={{ position: "absolute", left: 24, bottom: 18, color: "#fff" }}>
@@ -315,8 +330,8 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
               <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>Date observed</div>
               <input
                 value={fields.date_observed}
-                onChange={e => setFields({ ...fields, date_observed: e.target.value })}
-                onBlur={() => saveField("date_observed")}
+                onChange={e => { setFields(f => ({ ...f, date_observed: e.target.value })); markDirty("date_observed"); }}
+                onBlur={() => saveDirty()}
                 placeholder="e.g. Apr 21, 2026"
                 style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
               />
@@ -325,8 +340,8 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
               <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>Location</div>
               <input
                 value={fields.location}
-                onChange={e => setFields({ ...fields, location: e.target.value })}
-                onBlur={() => saveField("location")}
+                onChange={e => { setFields(f => ({ ...f, location: e.target.value })); markDirty("location"); }}
+                onBlur={() => saveDirty()}
                 placeholder="e.g. Tilden Park"
                 style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
               />
@@ -344,8 +359,8 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
             <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 8 }}>Notes</div>
             <textarea
               value={fields.comments}
-              onChange={e => setFields({ ...fields, comments: e.target.value })}
-              onBlur={() => saveField("comments")}
+              onChange={e => { setFields(f => ({ ...f, comments: e.target.value })); markDirty("comments"); }}
+              onBlur={() => saveDirty()}
               placeholder="Add observations from this sighting…"
               style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 8, background: "#fbfaf6", padding: "12px 14px", fontFamily: "inherit", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55, minHeight: 80, resize: "vertical", outline: "none" }}
             />
@@ -362,7 +377,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
             </svg>
             Delete
           </button>
-          <button onClick={onClose} style={{ ...primaryBtn, flex: 1, justifyContent: "center", height: 38 }}>Done</button>
+          <button onClick={handleClose} style={{ ...primaryBtn, flex: 1, justifyContent: "center", height: 38 }}>Done</button>
         </div>
       </div>
     </div>
