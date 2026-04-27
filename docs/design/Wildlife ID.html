@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wildlife ID — Onboarding</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-room: #efece4;           /* the desktop behind the window */
+    --bg-room-2:#e5e1d6;
+    --bg-app: #fbfaf6;            /* app canvas */
+    --bg-card:#ffffff;
+    --ink:    #1f2220;
+    --ink-2:  #4b4f4b;
+    --ink-3:  #7a7f7a;
+    --ink-4:  #aeb1ab;
+    --hair:   rgba(18,22,20,0.08);
+    --hair-2: rgba(18,22,20,0.14);
+    --accent: #6a8566;            /* sage */
+    --accent-deep:#4f6a4c;
+    --accent-soft:#e5ede2;
+    --accent-softer:#f1f5ee;
+    --warn:  #b8872b;
+  }
+  html,body{margin:0;padding:0;height:100%;background:
+    radial-gradient(120% 80% at 50% -10%, #f5f2ea 0%, var(--bg-room) 55%, var(--bg-room-2) 100%);
+    font-family:'Inter', -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    color:var(--ink); -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  #root{ min-height:100%; display:flex; align-items:center; justify-content:center; padding:32px; }
+  *{box-sizing:border-box}
+  button{font-family:inherit}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="application/json" id="speaker-notes">[]</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="identify-tab.jsx"></script>
+<script type="text/babel" src="collection-tab.jsx"></script>
+<script type="text/babel" src="settings-tab.jsx"></script>
+<script type="text/babel" src="wildlife-app.jsx"></script>
+</body>
+</html>
