@@ -1,0 +1,57 @@
+// ── Design tokens (docs/design-system.md) ────────────────────────────────────
+
+:root {
+  // Surfaces
+  --bg-room:    #efece4;
+  --bg-room-2:  #e5e1d6;
+  --bg-app:     #fbfaf6;
+  --bg-card:    #ffffff;
+
+  // Text
+  --ink:   #1f2220;
+  --ink-2: #4b4f4b;
+  --ink-3: #7a7f7a;
+  --ink-4: #aeb1ab;
+
+  // Hairlines
+  --hair:   rgba(18, 22, 20, 0.08);
+  --hair-2: rgba(18, 22, 20, 0.14);
+
+  // Accent (sage)
+  --accent:        #6a8566;
+  --accent-deep:   #4f6a4c;
+  --accent-soft:   #e5ede2;
+  --accent-softer: #f1f5ee;
+
+  --warn: #b8872b;
+
+  // Typography
+  --font-ui:      "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-mono:    "JetBrains Mono", "Courier New", monospace;
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background-color: var(--bg-app);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -1,0 +1,21 @@
+# ── Runtime (always required) ─────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# ── Inference (required for Phase 1+) ────────────────────────────────────────
+# Install separately to keep Phase 0 setup lightweight:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   pip install open-clip-torch Pillow numpy
+#
+# open-clip-torch>=2.26.1
+# torch>=2.3.0
+# Pillow>=10.0.0
+# numpy>=1.26.0
+
+# ── Dev / test ────────────────────────────────────────────────────────────────
+# pytest>=8.0.0
+# mypy>=1.10.0
+# ruff>=0.4.0
+# black>=24.0.0

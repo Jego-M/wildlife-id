@@ -1,0 +1,115 @@
+import { ipcMain, app, shell } from "electron";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import log from "electron-log";
+import { getBackendUrl } from "./backend-launcher";
+import { getRepo } from "./database";
+import type { NewSighting, Sighting } from "../shared/types";
+
+function backendError(channel: string, err: unknown): never {
+  log.error(`${channel} failed`, err);
+  throw new Error("Could not reach the model backend.");
+}
+
+function dbError(channel: string, err: unknown): never {
+  log.error(`${channel} failed`, err);
+  throw new Error("A database error occurred.");
+}
+
+export function registerIpcHandlers(): void {
+  // ── Models ──────────────────────────────────────────────────────────────────
+
+  ipcMain.handle("models:list", async () => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/models`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      backendError("models:list", err);
+    }
+  });
+
+  ipcMain.handle("models:select", async (_, modelId: string) => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/select_model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      backendError("models:select", err);
+    }
+  });
+
+  // ── Identify ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle("identify:predict", async (_, imageBytes: Uint8Array) => {
+    try {
+      const form = new FormData();
+      form.append("image", new Blob([imageBytes]), "image.jpg");
+      form.append("top_k", "3");
+      const res = await fetch(`${getBackendUrl()}/predict`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      backendError("identify:predict", err);
+    }
+  });
+
+  // ── Sightings ─────────────────────────────────────────────────────────────────
+
+  ipcMain.handle("sightings:list", (_, search?: string) => {
+    try {
+      return getRepo().list(search);
+    } catch (err) {
+      dbError("sightings:list", err);
+    }
+  });
+
+  ipcMain.handle("sightings:create", (_, s: NewSighting) => {
+    try {
+      return getRepo().create(s);
+    } catch (err) {
+      dbError("sightings:create", err);
+    }
+  });
+
+  ipcMain.handle("sightings:update", (_, id: number, patch: Partial<Sighting>) => {
+    try {
+      return getRepo().update(id, patch);
+    } catch (err) {
+      dbError("sightings:update", err);
+    }
+  });
+
+  ipcMain.handle("sightings:delete", (_, id: number) => {
+    try {
+      getRepo().delete(id);
+    } catch (err) {
+      dbError("sightings:delete", err);
+    }
+  });
+
+  // ── App ───────────────────────────────────────────────────────────────────────
+
+  ipcMain.handle("app:version", () => app.getVersion());
+
+  ipcMain.handle("app:open-data-folder", () => {
+    shell.openPath(app.getPath("userData"));
+  });
+
+  ipcMain.handle("app:licenses", () => {
+    try {
+      const licensesPath = app.isPackaged
+        ? path.join(process.resourcesPath, "THIRD_PARTY_LICENSES.txt")
+        : path.join(app.getAppPath(), "THIRD_PARTY_LICENSES.txt");
+      return readFileSync(licensesPath, "utf8");
+    } catch {
+      return "(License file not found — run the build to generate it)";
+    }
+  });
+}

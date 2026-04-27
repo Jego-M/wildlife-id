@@ -1,0 +1,33 @@
+appId: org.wildlifeid.app
+productName: Wildlife ID
+
+directories:
+  output: dist/installers
+
+files:
+  - dist/main/**
+  - dist/renderer/**
+  - package.json
+
+extraResources:
+  - from: dist/backend
+    to: backend
+    filter: ["**/*"]
+
+mac:
+  target: dmg
+  category: public.app-category.education
+  identity: null  # unsigned
+
+win:
+  target: nsis
+  signAndEditExecutable: false  # unsigned
+
+linux:
+  target: AppImage
+  category: Education
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
