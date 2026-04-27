@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import socket
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Generator
 
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from predictor import Predictor
@@ -24,8 +26,9 @@ predictor: Predictor | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     global predictor
-    predictor = Predictor()
-    logger.info("Backend ready")
+    model_dir = os.environ.get("WILDLIFE_MODEL_DIR")
+    predictor = Predictor(models_dir=model_dir)
+    logger.info("Backend ready (models_dir=%s)", predictor.models_dir)
     yield
     logger.info("Backend shutting down")
 
@@ -77,6 +80,21 @@ async def predict(
     assert predictor is not None
     image_bytes = await image.read()
     return predictor.predict(image_bytes, top_k=top_k)
+
+
+class DownloadModelRequest(BaseModel):
+    model_id: str
+
+
+@app.post("/download_model")
+async def download_model(req: DownloadModelRequest) -> StreamingResponse:
+    assert predictor is not None
+
+    def event_stream() -> Generator[str, None, None]:
+        for progress in predictor.download_model(req.model_id):
+            yield f"data: {json.dumps(progress)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ── Port-file helpers ──────────────────────────────────────────────────────────

@@ -17,6 +17,9 @@ const api = {
     select: (id: ModelId): Promise<void> =>
       ipcRenderer.invoke("models:select", id),
 
+    download: (id: ModelId): Promise<void> =>
+      ipcRenderer.invoke("models:download", id),
+
     onDownloadProgress: (cb: (p: ModelDownloadProgress) => void): (() => void) => {
       const handler = (_: IpcRendererEvent, p: ModelDownloadProgress) => cb(p);
       ipcRenderer.on("models:download-progress", handler);

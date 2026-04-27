@@ -59,6 +59,7 @@ export interface WildlifeApi {
   models: {
     list: () => Promise<ModelsResponse>;
     select: (id: ModelId) => Promise<void>;
+    download: (id: ModelId) => Promise<void>;
     onDownloadProgress: (cb: (p: ModelDownloadProgress) => void) => () => void;
   };
   identify: {

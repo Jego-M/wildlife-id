@@ -4,6 +4,9 @@ uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9
 pydantic>=2.0.0
 
+# ── Model download ─────────────────────────────────────────────────────────────
+huggingface_hub>=0.23.0
+
 # ── Inference (required for Phase 1+) ────────────────────────────────────────
 # Install separately to keep Phase 0 setup lightweight:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

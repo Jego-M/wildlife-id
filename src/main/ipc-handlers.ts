@@ -1,10 +1,10 @@
-import { ipcMain, app, shell } from "electron";
+import { ipcMain, app, shell, BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import log from "electron-log";
 import { getBackendUrl } from "./backend-launcher";
 import { getRepo } from "./database";
-import type { NewSighting, Sighting } from "../shared/types";
+import type { ModelDownloadProgress, NewSighting, Sighting } from "../shared/types";
 
 function backendError(channel: string, err: unknown): never {
   log.error(`${channel} failed`, err);
@@ -39,6 +39,44 @@ export function registerIpcHandlers(): void {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (err) {
       backendError("models:select", err);
+    }
+  });
+
+  ipcMain.handle("models:download", async (_, modelId: string) => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/download_model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          try {
+            const progress: ModelDownloadProgress = JSON.parse(trimmed.slice(6));
+            win?.webContents.send("models:download-progress", progress);
+          } catch {
+            // skip malformed lines
+          }
+        }
+      }
+    } catch (err) {
+      backendError("models:download", err);
     }
   });
 

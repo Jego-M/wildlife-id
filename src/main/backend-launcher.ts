@@ -89,11 +89,14 @@ export async function startBackend(): Promise<number> {
 
   const binary = resolveBackendBinary();
   const args = resolveBackendArgs();
+  const modelDir = path.join(app.getPath("userData"), "models");
   log.info(`Spawning backend: ${binary} ${args.join(" ")}`);
+  log.info(`Model directory: ${modelDir}`);
 
   backend = spawn(binary, args, {
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
+    env: { ...process.env, WILDLIFE_MODEL_DIR: modelDir },
   });
 
   backend.stdout?.on("data", (b: Buffer) =>
