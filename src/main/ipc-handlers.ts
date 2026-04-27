@@ -1,10 +1,12 @@
 import { ipcMain, app, shell, BrowserWindow } from "electron";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import log from "electron-log";
 import { getBackendUrl } from "./backend-launcher";
 import { getRepo } from "./database";
-import type { ModelDownloadProgress, NewSighting, Sighting } from "../shared/types";
+import type { ModelDownloadProgress, CreateSightingPayload, NewSighting, Sighting } from "../shared/types";
 
 function backendError(channel: string, err: unknown): never {
   log.error(`${channel} failed`, err);
@@ -108,9 +110,24 @@ export function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle("sightings:create", (_, s: NewSighting) => {
+  ipcMain.handle("sightings:create", async (_, s: CreateSightingPayload) => {
     try {
-      return getRepo().create(s);
+      const imagesDir = path.join(app.getPath("userData"), "images");
+      mkdirSync(imagesDir, { recursive: true });
+      const filename = `${randomUUID()}.jpg`;
+      await writeFile(path.join(imagesDir, filename), Buffer.from(s.image_bytes));
+
+      const newSighting: NewSighting = {
+        scientific_name: s.scientific_name,
+        common_name: s.common_name,
+        confidence: s.confidence,
+        image_path: filename,
+        model_used: s.model_used,
+        date_observed: s.date_observed ?? null,
+        location: s.location ?? null,
+        comments: s.comments ?? null,
+      };
+      return getRepo().create(newSighting);
     } catch (err) {
       dbError("sightings:create", err);
     }

@@ -1,5 +1,7 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, shell, protocol } from "electron";
 import path from "node:path";
+import { mkdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import log from "electron-log";
 import { startBackend, stopBackend } from "./backend-launcher";
 import { registerIpcHandlers } from "./ipc-handlers";
@@ -45,6 +47,20 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  // Serve images from userData/images/ via local-image:// protocol
+  const imagesDir = path.join(app.getPath("userData"), "images");
+  mkdirSync(imagesDir, { recursive: true });
+  protocol.handle("local-image", async (request) => {
+    const imageName = decodeURIComponent(request.url.replace("local-image://", ""));
+    const filePath = path.join(imagesDir, path.basename(imageName));
+    try {
+      const data = await readFile(filePath);
+      return new Response(data, { headers: { "content-type": "image/jpeg" } });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  });
+
   registerIpcHandlers();
 
   try {

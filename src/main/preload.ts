@@ -3,7 +3,7 @@ import type {
   ModelId,
   PredictResponse,
   Sighting,
-  NewSighting,
+  CreateSightingPayload,
   ModelDownloadProgress,
   ModelsResponse,
   WildlifeApi,
@@ -36,7 +36,7 @@ const api = {
     list: (search?: string): Promise<Sighting[]> =>
       ipcRenderer.invoke("sightings:list", search),
 
-    create: (s: NewSighting): Promise<Sighting> =>
+    create: (s: CreateSightingPayload): Promise<Sighting> =>
       ipcRenderer.invoke("sightings:create", s),
 
     update: (id: number, patch: Partial<Sighting>): Promise<Sighting> =>

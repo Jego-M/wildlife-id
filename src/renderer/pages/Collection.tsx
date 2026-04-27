@@ -1,54 +1,94 @@
-import { useState, useMemo } from "react";
-import { PhotoBitmap } from "../components/ui";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import type { Sighting } from "../../shared/types";
 
-interface CollectionItem {
-  id: number; species: string; latin: string; confidence: number;
-  date: string; loc: string; group: string; status: string;
-  palette: string[]; tag: string;
+const ghostBtn: React.CSSProperties = {
+  appearance: "none", border: "0.5px solid var(--hair-2)", background: "#fff",
+  color: "var(--ink-2)", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500,
+  padding: "7px 12px", borderRadius: 7, cursor: "pointer",
+  display: "inline-flex", alignItems: "center", gap: 6,
+};
+const primaryBtn: React.CSSProperties = {
+  appearance: "none", border: 0, background: "var(--accent)", color: "#fff",
+  fontFamily: "inherit", fontSize: 12.5, fontWeight: 500,
+  padding: "7px 14px", borderRadius: 7, cursor: "pointer",
+  display: "inline-flex", alignItems: "center", gap: 6,
+  boxShadow: "0 1px 0 rgba(255,255,255,0.2) inset, 0 4px 10px -4px rgba(80,110,80,0.5)",
+};
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
 }
 
-const COLLECTION_DATA: CollectionItem[] = [
-  { id:1,  species:"Red Fox",                  latin:"Vulpes vulpes",           confidence:0.94, date:"Apr 21, 2026", loc:"Skyline Wilderness, CA",  group:"Mammals",   status:"Least concern",  palette:["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], tag:"fox" },
-  { id:2,  species:"Great Horned Owl",          latin:"Bubo virginianus",        confidence:0.88, date:"Apr 20, 2026", loc:"Briones Regional Park",   group:"Birds",     status:"Least concern",  palette:["#5a4a36","#a08866","#2b231a","#c9b48f"], tag:"owl" },
-  { id:3,  species:"Pacific Tree Frog",         latin:"Pseudacris regilla",      confidence:0.91, date:"Apr 18, 2026", loc:"Tilden Park pond",        group:"Amphibians",status:"Least concern",  palette:["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], tag:"frog" },
-  { id:4,  species:"Mule Deer",                 latin:"Odocoileus hemionus",     confidence:0.96, date:"Apr 18, 2026", loc:"Mt. Diablo trailhead",    group:"Mammals",   status:"Least concern",  palette:["#6f5535","#a78a5e","#3a2c1c","#d4b58a"], tag:"deer" },
-  { id:5,  species:"Anna\u2019s Hummingbird",   latin:"Calypte anna",            confidence:0.82, date:"Apr 16, 2026", loc:"Backyard feeder",         group:"Birds",     status:"Least concern",  palette:["#3d5a4a","#7ba892","#1f2f26","#c9e0d2"], tag:"hummer" },
-  { id:6,  species:"Western Fence Lizard",      latin:"Sceloporus occidentalis", confidence:0.79, date:"Apr 15, 2026", loc:"Sunol Wilderness",        group:"Reptiles",  status:"Least concern",  palette:["#5a4a32","#9a8255","#2c241a","#c4b48a"], tag:"lizard" },
-  { id:7,  species:"Coyote",                    latin:"Canis latrans",           confidence:0.86, date:"Apr 14, 2026", loc:"Marin Headlands",         group:"Mammals",   status:"Least concern",  palette:["#6a5a44","#9d8a6e","#2e2820","#c4b59a"], tag:"coyote" },
-  { id:8,  species:"Steller\u2019s Jay",        latin:"Cyanocitta stelleri",     confidence:0.93, date:"Apr 12, 2026", loc:"Big Basin Redwoods",      group:"Birds",     status:"Least concern",  palette:["#1f3a5a","#3d6a96","#0f1a2c","#7aa6cf"], tag:"jay" },
-  { id:9,  species:"Western Tiger Swallowtail", latin:"Papilio rutulus",         confidence:0.80, date:"Apr 11, 2026", loc:"Garden, Berkeley",        group:"Insects",   status:"Least concern",  palette:["#7a6a2a","#d4b850","#2a2410","#f0e0a0"], tag:"butterfly" },
-  { id:10, species:"California Newt",           latin:"Taricha torosa",          confidence:0.75, date:"Apr 09, 2026", loc:"Tilden creek",            group:"Amphibians",status:"Special concern",palette:["#5a3a26","#9a6a48","#2c1a10","#c89a6a"], tag:"newt" },
-  { id:11, species:"Black-tailed Jackrabbit",   latin:"Lepus californicus",      confidence:0.84, date:"Apr 08, 2026", loc:"Coyote Hills",            group:"Mammals",   status:"Least concern",  palette:["#7a6a52","#a89478","#322820","#cdb89c"], tag:"rabbit" },
-  { id:12, species:"Acorn Woodpecker",          latin:"Melanerpes formicivorus", confidence:0.90, date:"Apr 06, 2026", loc:"Mt. Tamalpais",           group:"Birds",     status:"Least concern",  palette:["#3a2a1c","#a83a30","#1c1410","#e0dac6"], tag:"wood" },
-  { id:13, species:"Garter Snake",              latin:"Thamnophis sirtalis",     confidence:0.71, date:"Apr 04, 2026", loc:"Backyard",                group:"Reptiles",  status:"Least concern",  palette:["#3a4a26","#6a8a3a","#1a200f","#a8c060"], tag:"snake" },
-  { id:14, species:"Bobcat",                    latin:"Lynx rufus",              confidence:0.77, date:"Apr 02, 2026", loc:"Mission Peak",            group:"Mammals",   status:"Least concern",  palette:["#7a5a36","#b08a5a","#3a2818","#d4b48a"], tag:"bobcat" },
-  { id:15, species:"Western Bluebird",          latin:"Sialia mexicana",         confidence:0.92, date:"Mar 30, 2026", loc:"Henry Coe State Park",    group:"Birds",     status:"Least concern",  palette:["#1f4a7a","#7a3a2a","#0f1f3a","#cd8870"], tag:"blue" },
-  { id:16, species:"Banana Slug",               latin:"Ariolimax columbianus",   confidence:0.97, date:"Mar 28, 2026", loc:"Muir Woods",              group:"Insects",   status:"Least concern",  palette:["#7a6a1c","#d4be3a","#2a2410","#f0dc70"], tag:"slug" },
-  { id:17, species:"Red-tailed Hawk",           latin:"Buteo jamaicensis",       confidence:0.85, date:"Mar 26, 2026", loc:"Sunol pasture",           group:"Birds",     status:"Least concern",  palette:["#6a3a26","#a8694a","#2a1810","#d49a7a"], tag:"hawk" },
-  { id:18, species:"Sea Otter",                 latin:"Enhydra lutris",          confidence:0.89, date:"Mar 22, 2026", loc:"Monterey Bay",            group:"Mammals",   status:"Endangered",     palette:["#3a2a1c","#6a4a32","#1a1208","#a8866a"], tag:"otter" },
-];
-
-const GROUPS = ["All","Mammals","Birds","Reptiles","Amphibians","Insects"];
-
 export default function Collection() {
-  const [group, setGroup] = useState("All");
+  const [sightings, setSightings] = useState<Sighting[]>([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [sort, setSort]   = useState("recent");
-  const [view, setView]   = useState<"grid"|"list">("grid");
-  const [selected, setSelected] = useState<CollectionItem | null>(null);
+  const [sort, setSort] = useState("recent");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [selected, setSelected] = useState<Sighting | null>(null);
+
+  const loadSightings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await window.api.sightings.list();
+      setSightings(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadSightings(); }, [loadSightings]);
 
   const filtered = useMemo(() => {
-    let r = COLLECTION_DATA.filter(d =>
-      (group === "All" || d.group === group) &&
-      (!query || (d.species + " " + d.latin + " " + d.loc).toLowerCase().includes(query.toLowerCase()))
-    );
-    if (sort === "recent")     r = [...r].sort((a, b) => b.id - a.id);
+    let r = sightings;
+    if (query) {
+      const q = query.toLowerCase();
+      r = r.filter(s =>
+        (s.scientific_name + " " + (s.common_name ?? "") + " " + (s.location ?? "")).toLowerCase().includes(q)
+      );
+    }
+    if (sort === "recent") r = [...r].sort((a, b) => b.id - a.id);
     if (sort === "confidence") r = [...r].sort((a, b) => b.confidence - a.confidence);
-    if (sort === "species")    r = [...r].sort((a, b) => a.species.localeCompare(b.species));
+    if (sort === "species") r = [...r].sort((a, b) =>
+      (a.common_name ?? a.scientific_name).localeCompare(b.common_name ?? b.scientific_name)
+    );
     return r;
-  }, [group, query, sort]);
+  }, [sightings, query, sort]);
 
-  const speciesCount = useMemo(() => new Set(COLLECTION_DATA.map(d => d.species)).size, []);
+  const speciesCount = useMemo(() => new Set(sightings.map(s => s.scientific_name)).size, [sightings]);
+
+  const handleDelete = async (id: number) => {
+    await window.api.sightings.delete(id);
+    setSelected(null);
+    loadSightings();
+  };
+
+  if (loading) {
+    return (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ fontSize: 14, color: "var(--ink-3)" }}>Loading collection…</div>
+      </div>
+    );
+  }
+
+  if (sightings.length === 0) {
+    return (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center", maxWidth: 360 }}>
+          <div style={{ fontFamily: "Fraunces, serif", fontSize: 22, fontWeight: 500, color: "var(--ink)", marginBottom: 8 }}>No sightings yet</div>
+          <div style={{ fontSize: 13.5, color: "var(--ink-3)", lineHeight: 1.6 }}>
+            Identify an animal and save it to start your collection.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0, position: "relative" }}>
@@ -56,37 +96,15 @@ export default function Collection() {
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase" as const, color: "var(--accent-deep)", marginBottom: 6 }}>Your collection</div>
           <h1 style={{ fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 26, letterSpacing: "-0.015em", color: "var(--ink)", margin: 0 }}>
-            {COLLECTION_DATA.length} sightings
+            {sightings.length} sighting{sightings.length !== 1 ? "s" : ""}
             <span style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontWeight: 400, color: "var(--ink-3)", fontSize: 18, marginLeft: 10 }}>
               across {speciesCount} species
             </span>
           </h1>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={ghostBtn}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4h8M2 6h8M2 8h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-            Export CSV
-          </button>
-          <button style={primaryBtn}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-            New identification
-          </button>
-        </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 32px", borderBottom: "0.5px solid var(--hair)", flexShrink: 0 }}>
-        <div style={{ display: "flex", gap: 4, padding: 3, background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)" }}>
-          {GROUPS.map(g => (
-            <button key={g} onClick={() => setGroup(g)} style={{
-              appearance: "none", border: 0, cursor: "pointer", padding: "5px 11px", borderRadius: 5,
-              background: group === g ? "#fff" : "transparent",
-              color: group === g ? "var(--ink)" : "var(--ink-3)",
-              fontFamily: "inherit", fontSize: 12, fontWeight: group === g ? 500 : 450,
-              boxShadow: group === g ? "0 1px 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.06)" : "none",
-            }}>{g}</button>
-          ))}
-        </div>
-
         <div style={{ flex: 1, position: "relative", maxWidth: 280 }}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"
             style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
@@ -105,7 +123,7 @@ export default function Collection() {
           <select value={sort} onChange={e => setSort(e.target.value)} style={{ appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "5px 22px 5px 8px", fontFamily: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
             <option value="recent">Most recent</option>
             <option value="confidence">Highest confidence</option>
-            <option value="species">Species (A\u2013Z)</option>
+            <option value="species">Species (A–Z)</option>
           </select>
         </div>
 
@@ -117,7 +135,7 @@ export default function Collection() {
 
       <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
         {filtered.length === 0 ? (
-          <EmptyResult onClear={() => { setQuery(""); setGroup("All"); }} />
+          <EmptyResult onClear={() => setQuery("")} />
         ) : view === "grid" ? (
           <GridView items={filtered} onOpen={setSelected} />
         ) : (
@@ -125,24 +143,17 @@ export default function Collection() {
         )}
       </div>
 
-      {selected && <DetailDrawer item={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DetailDrawer
+          item={selected}
+          onClose={() => setSelected(null)}
+          onDelete={handleDelete}
+          onUpdated={() => { loadSightings(); }}
+        />
+      )}
     </div>
   );
 }
-
-const ghostBtn: React.CSSProperties = {
-  appearance: "none", border: "0.5px solid var(--hair-2)", background: "#fff",
-  color: "var(--ink-2)", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500,
-  padding: "7px 12px", borderRadius: 7, cursor: "pointer",
-  display: "inline-flex", alignItems: "center", gap: 6,
-};
-const primaryBtn: React.CSSProperties = {
-  appearance: "none", border: 0, background: "var(--accent)", color: "#fff",
-  fontFamily: "inherit", fontSize: 12.5, fontWeight: 500,
-  padding: "7px 14px", borderRadius: 7, cursor: "pointer",
-  display: "inline-flex", alignItems: "center", gap: 6,
-  boxShadow: "0 1px 0 rgba(255,255,255,0.2) inset, 0 4px 10px -4px rgba(80,110,80,0.5)",
-};
 
 function ViewToggle({ active, onClick, icon }: { active: boolean; onClick: () => void; icon: "grid"|"list" }) {
   const paths = {
@@ -156,7 +167,7 @@ function ViewToggle({ active, onClick, icon }: { active: boolean; onClick: () =>
   );
 }
 
-function GridView({ items, onOpen }: { items: CollectionItem[]; onOpen: (i: CollectionItem) => void }) {
+function GridView({ items, onOpen }: { items: Sighting[]; onOpen: (i: Sighting) => void }) {
   return (
     <div style={{ padding: "22px 32px 32px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
       {items.map(it => <GridCard key={it.id} item={it} onClick={() => onOpen(it)} />)}
@@ -164,61 +175,71 @@ function GridView({ items, onOpen }: { items: CollectionItem[]; onOpen: (i: Coll
   );
 }
 
-function GridCard({ item, onClick }: { item: CollectionItem; onClick: () => void }) {
+function GridCard({ item, onClick }: { item: Sighting; onClick: () => void }) {
   const [hover, setHover] = useState(false);
+  const displayName = item.common_name ?? item.scientific_name;
   return (
     <div onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{ cursor: "pointer", borderRadius: 12, overflow: "hidden", background: "#fff", border: "0.5px solid var(--hair)", boxShadow: hover ? "0 12px 28px -14px rgba(20,30,20,0.25), 0 0 0 0.5px rgba(106,133,102,0.4)" : "0 1px 2px rgba(20,30,20,0.04)", transform: hover ? "translateY(-2px)" : "none", transition: "all 200ms ease", display: "flex", flexDirection: "column" }}>
-      <div style={{ position: "relative", aspectRatio: "4/3" }}>
-        <PhotoBitmap photo={{ id: item.tag, palette: item.palette }} style={{ position: "absolute", inset: 0 }} />
+      <div style={{ position: "relative", aspectRatio: "4/3", background: "#e8e4db" }}>
+        <img
+          src={`local-image://${item.image_path}`}
+          alt={displayName}
+          draggable={false}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+        />
         <div style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(20,28,22,0.78)", color: "#fff", fontSize: 11, fontWeight: 500, padding: "4px 9px", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 4px var(--accent)" }} />
           {Math.round(item.confidence * 100)}%
         </div>
-        {item.status === "Endangered" && <span style={{ position: "absolute", top: 10, left: 10, fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "#fff", background: "rgba(184,71,53,0.92)", padding: "3px 7px", borderRadius: 4 }}>Endangered</span>}
-        {item.status === "Special concern" && <span style={{ position: "absolute", top: 10, left: 10, fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "#fff", background: "rgba(184,135,43,0.92)", padding: "3px 7px", borderRadius: 4 }}>Watch</span>}
       </div>
       <div style={{ padding: "12px 14px 14px" }}>
-        <div style={{ fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 16, color: "var(--ink)", letterSpacing: "-0.005em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.species}</div>
-        <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 12, color: "var(--ink-3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.latin}</div>
+        <div style={{ fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 16, color: "var(--ink)", letterSpacing: "-0.005em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+        <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 12, color: "var(--ink-3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.scientific_name}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: 11.5, color: "var(--ink-3)" }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{item.loc}</span>
-          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--ink-4)", flexShrink: 0 }}>{item.date.split(",")[0]}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{item.location ?? "—"}</span>
+          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10.5, color: "var(--ink-4)", flexShrink: 0 }}>{formatDate(item.date_observed ?? item.created_at).split(",")[0]}</span>
         </div>
       </div>
     </div>
   );
 }
 
-function ListView({ items, onOpen }: { items: CollectionItem[]; onOpen: (i: CollectionItem) => void }) {
+function ListView({ items, onOpen }: { items: Sighting[]; onOpen: (i: Sighting) => void }) {
   return (
     <div style={{ padding: "8px 32px 32px" }}>
       <div style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 90px 32px", gap: 14, alignItems: "center", padding: "10px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", borderBottom: "0.5px solid var(--hair)" }}>
         <span /><span>Species</span><span>Location</span><span>Date</span><span style={{ textAlign: "right" }}>Confidence</span><span />
       </div>
-      {items.map(it => (
-        <div key={it.id} onClick={() => onOpen(it)}
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-softer)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-          style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 90px 32px", gap: 14, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", transition: "background 120ms ease", borderBottom: "0.5px solid var(--hair)" }}>
-          <PhotoBitmap photo={{ id: it.tag, palette: it.palette }} style={{ width: 48, height: 36, borderRadius: 5 }} />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: "Fraunces, serif", fontSize: 14.5, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.005em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.species}</div>
-            <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 11.5, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.latin}</div>
-          </div>
-          <span style={{ fontSize: 12.5, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.loc}</span>
-          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11.5, color: "var(--ink-3)" }}>{it.date}</span>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-            <div style={{ width: 50, height: 4, background: "var(--accent-softer)", borderRadius: 999, overflow: "hidden" }}>
-              <div style={{ width: `${it.confidence * 100}%`, height: "100%", background: "var(--accent)" }} />
+      {items.map(it => {
+        const displayName = it.common_name ?? it.scientific_name;
+        return (
+          <div key={it.id} onClick={() => onOpen(it)}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-softer)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 90px 32px", gap: 14, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", transition: "background 120ms ease", borderBottom: "0.5px solid var(--hair)" }}>
+            <div style={{ width: 48, height: 36, borderRadius: 5, overflow: "hidden", background: "#e8e4db" }}>
+              <img src={`local-image://${it.image_path}`} alt="" draggable={false}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             </div>
-            <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 500, minWidth: 28 }}>{Math.round(it.confidence * 100)}%</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "Fraunces, serif", fontSize: 14.5, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.005em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+              <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 11.5, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.scientific_name}</div>
+            </div>
+            <span style={{ fontSize: 12.5, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.location ?? "—"}</span>
+            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11.5, color: "var(--ink-3)" }}>{formatDate(it.date_observed ?? it.created_at)}</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+              <div style={{ width: 50, height: 4, background: "var(--accent-softer)", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: `${it.confidence * 100}%`, height: "100%", background: "var(--accent)" }} />
+              </div>
+              <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 500, minWidth: 28 }}>{Math.round(it.confidence * 100)}%</span>
+            </div>
+            <span style={{ color: "var(--ink-4)", textAlign: "right" }}>
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </span>
           </div>
-          <span style={{ color: "var(--ink-4)", textAlign: "right" }}>
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -233,28 +254,48 @@ function EmptyResult({ onClear }: { onClear: () => void }) {
   );
 }
 
-const SAMPLE_NOTES: Record<string, string> = {
-  fox: "Curled up near the trail edge at dawn. Coat in good condition; tagged for repeat sightings.",
-  owl: "Heard the call before spotting it. Perched in the same oak as last week.",
-  frog: "Calling from the cattails after a rain. Several individuals visible.",
-  deer: "Doe with two yearlings. Browsing the grass near the parking lot.",
-};
+function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
+  item: Sighting; onClose: () => void;
+  onDelete: (id: number) => void; onUpdated: () => void;
+}) {
+  const displayName = item.common_name ?? item.scientific_name;
+  const [fields, setFields] = useState({
+    date_observed: item.date_observed ?? "",
+    location: item.location ?? "",
+    comments: item.comments ?? "",
+  });
+  const [saving, setSaving] = useState(false);
 
-function DetailDrawer({ item, onClose }: { item: CollectionItem; onClose: () => void }) {
+  const saveField = async (key: keyof typeof fields) => {
+    const value = fields[key] || null;
+    setSaving(true);
+    try {
+      const updated = await window.api.sightings.update(item.id, { [key]: value });
+      onUpdated();
+      return updated;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 5, display: "flex", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(20,25,20,0.35)", animation: "fadeIn 180ms ease" }} />
       <div style={{ position: "relative", width: 440, height: "100%", background: "#fff", borderLeft: "0.5px solid var(--hair)", display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px -10px rgba(20,30,20,0.2)", animation: "slideIn 240ms cubic-bezier(.3,.7,.4,1)" }}>
-        <div style={{ position: "relative", height: 240, flexShrink: 0 }}>
-          <PhotoBitmap photo={{ id: item.tag, palette: item.palette }} style={{ position: "absolute", inset: 0 }} />
+        <div style={{ position: "relative", height: 240, flexShrink: 0, background: "#e8e4db" }}>
+          <img
+            src={`local-image://${item.image_path}`}
+            alt={displayName}
+            draggable={false}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+          />
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 40%, rgba(0,0,0,0.6) 100%)" }} />
           <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, appearance: "none", border: 0, background: "rgba(20,25,20,0.5)", color: "#fff", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
           </button>
           <div style={{ position: "absolute", left: 24, bottom: 18, color: "#fff" }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, opacity: 0.8, marginBottom: 6 }}>{item.group}</div>
-            <div style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 500, letterSpacing: "-0.015em", lineHeight: 1.1 }}>{item.species}</div>
-            <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 14, opacity: 0.85, marginTop: 2 }}>{item.latin}</div>
+            <div style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 500, letterSpacing: "-0.015em", lineHeight: 1.1 }}>{displayName}</div>
+            <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 14, opacity: 0.85, marginTop: 2 }}>{item.scientific_name}</div>
           </div>
         </div>
 
@@ -270,38 +311,58 @@ function DetailDrawer({ item, onClose }: { item: CollectionItem; onClose: () => 
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
-            {[["Date", item.date],["Location", item.loc],["Group", item.group],["Status", item.status]].map(([label, value]) => (
-              <div key={label}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>{value}</div>
-              </div>
-            ))}
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>Date observed</div>
+              <input
+                value={fields.date_observed}
+                onChange={e => setFields({ ...fields, date_observed: e.target.value })}
+                onBlur={() => saveField("date_observed")}
+                placeholder="e.g. Apr 21, 2026"
+                style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>Location</div>
+              <input
+                value={fields.location}
+                onChange={e => setFields({ ...fields, location: e.target.value })}
+                onBlur={() => saveField("location")}
+                placeholder="e.g. Tilden Park"
+                style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>
+              Model used
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{item.model_used === "bioclip-v1" ? "BioCLIP v1 (Fast)" : "BioCLIP 2 (Accurate)"}</div>
           </div>
 
           <div style={{ marginBottom: 22 }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 8 }}>Notes</div>
-            <div style={{ padding: "12px 14px", background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)", minHeight: 64, fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
-              {SAMPLE_NOTES[item.tag] ?? "No notes yet \u2014 tap to add observations from this sighting."}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 8 }}>Tags</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {["backyard","morning","photographed"].map(t => (
-                <span key={t} style={{ fontSize: 11.5, color: "var(--ink-2)", padding: "3px 9px", borderRadius: 999, background: "var(--accent-softer)", border: "0.5px solid rgba(106,133,102,0.2)" }}>{t}</span>
-              ))}
-              <button style={{ fontSize: 11.5, color: "var(--ink-3)", padding: "3px 9px", borderRadius: 999, background: "transparent", border: "0.5px dashed var(--hair-2)", cursor: "pointer", fontFamily: "inherit", appearance: "none" }}>+ Add tag</button>
-            </div>
+            <textarea
+              value={fields.comments}
+              onChange={e => setFields({ ...fields, comments: e.target.value })}
+              onBlur={() => saveField("comments")}
+              placeholder="Add observations from this sighting…"
+              style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 8, background: "#fbfaf6", padding: "12px 14px", fontFamily: "inherit", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55, minHeight: 80, resize: "vertical", outline: "none" }}
+            />
           </div>
         </div>
 
         <div style={{ padding: "14px 28px", borderTop: "0.5px solid var(--hair)", display: "flex", gap: 8, flexShrink: 0 }}>
-          <button style={{ ...ghostBtn, flex: 1, justifyContent: "center", height: 38 }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 5l4 4 4-7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Re\u2011identify
+          <button onClick={() => onDelete(item.id)} style={{
+            ...ghostBtn, flex: 1, justifyContent: "center", height: 38,
+            color: "#c0392b", borderColor: "rgba(192,57,43,0.25)",
+          }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 3h8M4 3V2h4v1M3 3l.5 7h5L9 3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Delete
           </button>
-          <button style={{ ...primaryBtn, flex: 1, justifyContent: "center", height: 38 }}>View in field guide</button>
+          <button onClick={onClose} style={{ ...primaryBtn, flex: 1, justifyContent: "center", height: 38 }}>Done</button>
         </div>
       </div>
     </div>

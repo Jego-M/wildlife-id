@@ -35,6 +35,7 @@ export default function Identify() {
   const [predictions, setPredictions] = useState<Prediction[] | null>(null);
   const [modelUsed, setModelUsed] = useState<ModelId | null>(null);
   const [croppedImageUrl, setCroppedImageUrl] = useState<string | null>(null);
+  const [croppedBytes, setCroppedBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
@@ -112,6 +113,7 @@ export default function Identify() {
       if (cancelledRef.current) return;
 
       if (croppedImageUrl) URL.revokeObjectURL(croppedImageUrl);
+      setCroppedBytes(bytes);
       setCroppedImageUrl(URL.createObjectURL(blob));
 
       const response = await window.api.identify.predict(bytes);
@@ -137,11 +139,23 @@ export default function Identify() {
     setPredictions(null);
     setModelUsed(null);
     setCroppedImageUrl(null);
+    setCroppedBytes(null);
     setError(null);
     setStage("empty");
   };
 
   const resultTitle = predictions?.[0]?.common_name ?? predictions?.[0]?.scientific_name ?? "Unknown";
+
+  const handleSave = useCallback(async () => {
+    if (!predictions?.[0] || !modelUsed || !croppedBytes) return;
+    await window.api.sightings.create({
+      scientific_name: predictions[0].scientific_name,
+      common_name: predictions[0].common_name,
+      confidence: predictions[0].confidence,
+      image_bytes: croppedBytes,
+      model_used: modelUsed,
+    });
+  }, [predictions, modelUsed, croppedBytes]);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -160,7 +174,8 @@ export default function Identify() {
             imageUrl={croppedImageUrl ?? imageUrl ?? ""}
             imageName={imageFile?.name ?? ""}
             predictions={predictions} modelUsed={modelUsed}
-            error={error} done={stage === "result"} onAnother={reset} />
+            error={error} done={stage === "result"} onAnother={reset}
+            onSave={handleSave} />
         )}
       </div>
     </div>
@@ -544,10 +559,11 @@ function Handle({ mode, onMouseDown }: { mode: string; onMouseDown: (e: React.Mo
   );
 }
 
-function IdentifyStage({ imageUrl, imageName, predictions, modelUsed, error, done, onAnother }: {
+function IdentifyStage({ imageUrl, imageName, predictions, modelUsed, error, done, onAnother, onSave }: {
   imageUrl: string; imageName: string;
   predictions: Prediction[] | null; modelUsed: ModelId | null;
   error: string | null; done: boolean; onAnother: () => void;
+  onSave: () => Promise<void>;
 }) {
   return (
     <div style={{ height: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: 0 }}>
@@ -560,7 +576,7 @@ function IdentifyStage({ imageUrl, imageName, predictions, modelUsed, error, don
         ) : error ? (
           <ErrorPanel error={error} onAnother={onAnother} />
         ) : (
-          <ResultPanel predictions={predictions!} modelUsed={modelUsed!} onAnother={onAnother} />
+          <ResultPanel predictions={predictions!} modelUsed={modelUsed!} onAnother={onAnother} onSave={onSave} />
         )}
       </div>
     </div>
@@ -645,10 +661,12 @@ function IdentifyingPanel() {
 
 const TAXON_RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"];
 
-function ResultPanel({ predictions, modelUsed, onAnother }: {
+function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
   predictions: Prediction[]; modelUsed: ModelId; onAnother: () => void;
+  onSave: () => Promise<void>;
 }) {
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const top = predictions[0];
   const alts = predictions.slice(1);
 
@@ -714,7 +732,11 @@ function ResultPanel({ predictions, modelUsed, onAnother }: {
 
       <div style={{ flex: 1 }} />
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => setSaved(true)} disabled={saved} style={{
+        <button onClick={async () => {
+          if (saved || saving) return;
+          setSaving(true);
+          try { await onSave(); setSaved(true); } finally { setSaving(false); }
+        }} disabled={saved || saving} style={{
           flex: 1, appearance: "none", border: 0,
           background: saved ? "var(--accent-deep)" : "var(--accent)",
           color: "#fff", fontFamily: "inherit", fontSize: 13.5, fontWeight: 500,
@@ -722,7 +744,7 @@ function ResultPanel({ predictions, modelUsed, onAnother }: {
           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
           boxShadow: "0 1px 0 rgba(255,255,255,0.2) inset, 0 4px 10px -4px rgba(80,110,80,0.5)",
         }}>
-          {saved ? (<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7.2l3 3 5-5.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>Saved to collection</>) : (<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 2h8v10l-4-2.5L3 12V2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" /></svg>Save to collection</>)}
+          {saved ? (<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7.2l3 3 5-5.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>Saved to collection</>) : saving ? "Saving…" : (<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 2h8v10l-4-2.5L3 12V2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" /></svg>Save to collection</>)}
         </button>
         <button onClick={onAnother} style={{
           appearance: "none", border: "0.5px solid var(--hair-2)",

@@ -40,6 +40,17 @@ export interface Sighting {
 
 export type NewSighting = Omit<Sighting, "id" | "created_at">;
 
+export interface CreateSightingPayload {
+  scientific_name: string;
+  common_name: string | null;
+  confidence: number;
+  image_bytes: Uint8Array;
+  model_used: ModelId;
+  date_observed?: string | null;
+  location?: string | null;
+  comments?: string | null;
+}
+
 export interface ModelDownloadProgress {
   model_id: ModelId;
   bytes_downloaded: number;
@@ -67,7 +78,7 @@ export interface WildlifeApi {
   };
   sightings: {
     list: (search?: string) => Promise<Sighting[]>;
-    create: (s: NewSighting) => Promise<Sighting>;
+    create: (s: CreateSightingPayload) => Promise<Sighting>;
     update: (id: number, patch: Partial<Sighting>) => Promise<Sighting>;
     delete: (id: number) => Promise<void>;
   };
