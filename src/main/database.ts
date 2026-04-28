@@ -22,6 +22,10 @@ const MIGRATION_001 = `
   CREATE INDEX IF NOT EXISTS idx_sightings_common_name ON Sightings(CommonName);
 `;
 
+const MIGRATION_002 = `
+  ALTER TABLE Sightings ADD COLUMN TaxonomyClass TEXT;
+`;
+
 interface RawRow {
   Id: number;
   ScientificName: string;
@@ -29,6 +33,7 @@ interface RawRow {
   Confidence: number;
   ImagePath: string;
   ModelUsed: string;
+  TaxonomyClass: string | null;
   DateObserved: string | null;
   Location: string | null;
   Comments: string | null;
@@ -51,6 +56,7 @@ function toSighting(row: RawRow): Sighting {
     confidence: row.Confidence,
     image_path: row.ImagePath,
     model_used: row.ModelUsed as ModelId,
+    taxonomy_class: row.TaxonomyClass,
     date_observed: row.DateObserved,
     location: row.Location,
     comments: row.Comments,
@@ -79,6 +85,11 @@ export class SightingsRepo {
       this.db.pragma("user_version = 1");
       log.info("Applied DB migration 001");
     }
+    if (version < 2) {
+      this.db.exec(MIGRATION_002);
+      this.db.pragma("user_version = 2");
+      log.info("Applied DB migration 002");
+    }
   }
 
   list(search?: string): Sighting[] {
@@ -106,8 +117,8 @@ export class SightingsRepo {
       .prepare(
         `INSERT INTO Sightings
          (ScientificName, CommonName, Confidence, ImagePath, ModelUsed,
-          DateObserved, Location, Comments, CreatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          TaxonomyClass, DateObserved, Location, Comments, CreatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         s.scientific_name,
@@ -115,6 +126,7 @@ export class SightingsRepo {
         s.confidence,
         s.image_path,
         s.model_used,
+        s.taxonomy_class ?? null,
         s.date_observed ?? null,
         s.location ?? null,
         s.comments ?? null,

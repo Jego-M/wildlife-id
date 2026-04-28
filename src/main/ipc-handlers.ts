@@ -123,6 +123,7 @@ export function registerIpcHandlers(): void {
         confidence: s.confidence,
         image_path: filename,
         model_used: s.model_used,
+        taxonomy_class: s.taxonomy_class ?? null,
         date_observed: s.date_observed ?? null,
         location: s.location ?? null,
         comments: s.comments ?? null,

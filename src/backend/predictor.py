@@ -211,6 +211,7 @@ class Predictor:
                 "taxonomy": sp["taxonomy"],
                 "iucn_status": sp.get("iucn_status") or None,
                 "confidence": round(float(score), 6),
+                "animal_class": sp.get("class_") or None,
             })
 
         logger.info(

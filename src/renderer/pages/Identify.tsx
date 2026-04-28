@@ -154,6 +154,7 @@ export default function Identify() {
       confidence: predictions[0].confidence,
       image_bytes: croppedBytes,
       model_used: modelUsed,
+      taxonomy_class: predictions[0].animal_class ?? null,
     });
   }, [predictions, modelUsed, croppedBytes]);
 

@@ -25,10 +25,22 @@ function formatDate(iso: string | null): string {
   }
 }
 
+const GROUPS = ["All", "Mammals", "Birds", "Reptiles", "Amphibians", "Insects"] as const;
+type Group = (typeof GROUPS)[number];
+
+const CLASS_TO_GROUP: Record<string, Group> = {
+  Mammalia: "Mammals",
+  Aves: "Birds",
+  Reptilia: "Reptiles",
+  Amphibia: "Amphibians",
+  Insecta: "Insects",
+};
+
 export default function Collection() {
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<Group>("All");
   const [sort, setSort] = useState("recent");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -47,6 +59,9 @@ export default function Collection() {
 
   const filtered = useMemo(() => {
     let r = sightings;
+    if (group !== "All") {
+      r = r.filter(s => CLASS_TO_GROUP[s.taxonomy_class ?? ""] === group);
+    }
     if (query) {
       const q = query.toLowerCase();
       r = r.filter(s =>
@@ -59,7 +74,7 @@ export default function Collection() {
       (a.common_name ?? a.scientific_name).localeCompare(b.common_name ?? b.scientific_name)
     );
     return r;
-  }, [sightings, query, sort]);
+  }, [sightings, group, query, sort]);
 
   const speciesCount = useMemo(() => new Set(sightings.map(s => s.scientific_name)).size, [sightings]);
 
@@ -107,6 +122,19 @@ export default function Collection() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 32px", borderBottom: "0.5px solid var(--hair)", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 4, padding: 3, background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)" }}>
+          {GROUPS.map(g => (
+            <button key={g} onClick={() => setGroup(g)} style={{
+              appearance: "none", border: 0, cursor: "pointer",
+              padding: "5px 11px", borderRadius: 5,
+              background: group === g ? "#fff" : "transparent",
+              color: group === g ? "var(--ink)" : "var(--ink-3)",
+              fontFamily: "inherit", fontSize: 12, fontWeight: group === g ? 500 : 450,
+              boxShadow: group === g ? "0 1px 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.06)" : "none",
+            }}>{g}</button>
+          ))}
+        </div>
+
         <div style={{ flex: 1, position: "relative", maxWidth: 280 }}>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none"
             style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
@@ -137,7 +165,7 @@ export default function Collection() {
 
       <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
         {filtered.length === 0 ? (
-          <EmptyResult onClear={() => setQuery("")} />
+          <EmptyResult onClear={() => { setQuery(""); setGroup("All"); }} />
         ) : view === "grid" ? (
           <GridView items={filtered} onOpen={(s) => setSelectedId(s.id)} />
         ) : (

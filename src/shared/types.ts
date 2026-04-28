@@ -18,6 +18,7 @@ export interface Prediction {
   taxonomy: string[];
   iucn_status: string | null;
   confidence: number;
+  animal_class: string | null;
 }
 
 export interface PredictResponse {
@@ -32,6 +33,7 @@ export interface Sighting {
   confidence: number;
   image_path: string;
   model_used: ModelId;
+  taxonomy_class: string | null;
   date_observed: string | null;
   location: string | null;
   comments: string | null;
@@ -46,6 +48,7 @@ export interface CreateSightingPayload {
   confidence: number;
   image_bytes: Uint8Array;
   model_used: ModelId;
+  taxonomy_class?: string | null;
   date_observed?: string | null;
   location?: string | null;
   comments?: string | null;
