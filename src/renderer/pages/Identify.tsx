@@ -6,12 +6,14 @@ import type { Prediction, ModelId } from "../../shared/types";
 interface SamplePhoto {
   id: string; name: string; species: string; latin: string;
   confidence: number; palette: string[];
+  url: string;
+  thumbnail: string;
 }
 
 const SAMPLE_PHOTOS: SamplePhoto[] = [
-  { id: "fox",  name: "red-fox-meadow.jpg",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.94, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"] },
-  { id: "owl",  name: "great-horned-owl.jpg",  species: "Great Horned Owl", latin: "Bubo virginianus",   confidence: 0.88, palette: ["#5a4a36","#a08866","#2b231a","#c9b48f"] },
-  { id: "frog", name: "pacific-tree-frog.jpg", species: "Pacific Tree Frog",latin: "Pseudacris regilla", confidence: 0.91, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"] },
+  { id: "fox",  name: "red-fox-winter.png",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.99, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], url: "samples/red-fox-winter.png", thumbnail: "samples/red-fox-winter-thumb.png" },
+  { id: "owl",  name: "great-horned-owl.png",  species: "Great Horned Owl", latin: "Bubo virginianus",   confidence: 0.99, palette: ["#5a4a36","#a08866","#2b231a","#c9b48f"], url: "samples/great-horned-owl.png", thumbnail: "samples/great-horned-owl-thumb.png" },
+  { id: "ladybug", name: "seven-spot-ladybug.png", species: "Seven-spot Ladybug",latin: "Coccinella septempunctata", confidence: 0.99, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], url: "samples/seven-spot-ladybug.png", thumbnail: "samples/seven-spot-ladybug-thumb.png" },
 ];
 
 interface Crop { x: number; y: number; w: number; h: number; }
@@ -89,6 +91,13 @@ export default function Identify() {
     };
     img.src = url;
   };
+
+  const loadSample = useCallback(async (sample: SamplePhoto) => {
+    const resp = await fetch(sample.url);
+    const blob = await resp.blob();
+    const file = new File([blob], sample.name, { type: blob.type });
+    onPickFile(file);
+  }, []);
 
   const runIdentify = useCallback(async () => {
     if (!imageUrl || !imageDims) return;
@@ -174,7 +183,7 @@ export default function Identify() {
       <IdentifyHeader stage={stage} resultTitle={resultTitle} predictions={predictions} onReset={reset} />
       <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
         {stage === "empty" && (
-          <DropZone onFile={onPickFile} />
+          <DropZone onFile={onPickFile} onLoadSample={loadSample} />
         )}
         {stage === "crop" && imageUrl && imageDims && (
           <CropStage imageUrl={imageUrl} imageFile={imageFile!} imageDims={imageDims}
@@ -244,7 +253,7 @@ function IdentifyHeader({ stage, resultTitle, predictions, onReset }: { stage: S
   );
 }
 
-function DropZone({ onFile }: { onFile: (f: File) => void }) {
+function DropZone({ onFile, onLoadSample }: { onFile: (f: File) => void; onLoadSample: (s: SamplePhoto) => void }) {
   const [over, setOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -308,13 +317,13 @@ function DropZone({ onFile }: { onFile: (f: File) => void }) {
         }}>Or try a sample</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
           {SAMPLE_PHOTOS.map(p => (
-            <div key={p.id} style={{
+            <div key={p.id} onClick={() => onLoadSample(p)} style={{
               border: "0.5px solid var(--hair)", background: "#fff",
               borderRadius: 10, overflow: "hidden",
               display: "flex", alignItems: "center", gap: 12,
-              paddingRight: 14, opacity: 0.5,
+              paddingRight: 14, cursor: "pointer",
             }}>
-              <PhotoBitmap photo={p} style={{ width: 56, height: 56, flexShrink: 0 }} />
+              <img src={p.thumbnail} alt={p.species} style={{ width: 56, height: 56, flexShrink: 0, objectFit: "cover" }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{
                   fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 14.5,
@@ -327,9 +336,6 @@ function DropZone({ onFile }: { onFile: (f: File) => void }) {
               </div>
             </div>
           ))}
-        </div>
-        <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 6 }}>
-          Sample photos coming soon
         </div>
       </div>
     </div>
