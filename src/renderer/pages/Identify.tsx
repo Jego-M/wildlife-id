@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { PhotoBitmap, Spinner } from "../components/ui";
+import { getSetting } from "../lib/settings";
 import type { Prediction, ModelId } from "../../shared/types";
 
 interface SamplePhoto {
@@ -38,6 +39,16 @@ export default function Identify() {
   const [croppedBytes, setCroppedBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
+
+  // Play sound when identification completes
+  useEffect(() => {
+    if (stage !== "result" || !getSetting("sound", false)) return;
+    const id = getSetting("soundId", "identify-complete-2");
+    const vol = Number(getSetting("soundVolume", "1"));
+    const audio = new Audio(`sounds/${id}.mp3`);
+    audio.volume = vol;
+    audio.play().catch(() => { /* autoplay blocked, ignore */ });
+  }, [stage]);
 
   // Clean up object URL on unmount
   useEffect(() => {

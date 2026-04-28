@@ -1,5 +1,6 @@
 import { useState, CSSProperties } from "react";
 import { AppGlyph, Spinner } from "../components/ui";
+import { getSetting, setSetting } from "../lib/settings";
 
 // ── Section type & nav ────────────────────────────────────────────────────────
 
@@ -7,7 +8,7 @@ type Section = "models" | "general" | "storage" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "models", label: "AI Models" },
-  { id: "general", label: "General" },
+  { id: "general", label: "Sound" },
   { id: "storage", label: "Storage" },
   { id: "about", label: "About" },
 ];
@@ -290,33 +291,77 @@ function ModelRow({ name, tagline, description, stats, active, installed }: Mode
   );
 }
 
-// ── General section ───────────────────────────────────────────────────────────
+// ── Sound section ───────────────────────────────────────────────────────────
+
+const SOUNDS = [
+  { id: "identify-complete-1", label: "Chime" },
+  { id: "identify-complete-2", label: "Ding" },
+  { id: "identify-complete-3", label: "Pop" },
+];
 
 function GeneralSection() {
-  const [theme, setTheme] = useState("system");
-  const [autoSave, setAutoSave] = useState(true);
-  const [showPct, setShowPct] = useState(true);
-  const [sound, setSound] = useState(false);
-  const [defaultView, setDefaultView] = useState("Grid");
+  const [sound, setSound] = useState(() => getSetting("sound", false));
+  const [soundId, setSoundId] = useState(() => getSetting("soundId", SOUNDS[1].id));
+  const [volume, setVolume] = useState(() => Number(getSetting("soundVolume", "1")));
+
+  const preview = (id: string) => {
+    const audio = new Audio(`sounds/${id}.mp3`);
+    audio.volume = volume;
+    audio.play().catch(() => {});
+  };
 
   return (
     <div style={{ padding: "28px 36px 36px", maxWidth: 720 }}>
-      <SectionHeader title="General" subtitle="Everyday preferences for the app." />
-      <SettingsRow label="Theme" hint="Match your system or pick a side.">
-        <SegmentedControl value={theme} options={["Light", "System", "Dark"]} onChange={setTheme} />
+      <SectionHeader title="Sound" subtitle="Audio feedback when an identification finishes." />
+      <SettingsRow label="Sound on identification" hint="Play a sound when a result is ready.">
+        <Toggle on={sound} onChange={v => { setSound(v); setSetting("sound", v); }} />
       </SettingsRow>
-      <SettingsRow label="Auto-save identifications" hint="Add new IDs to your collection without prompting.">
-        <Toggle on={autoSave} onChange={setAutoSave} />
-      </SettingsRow>
-      <SettingsRow label="Show confidence as percentage" hint="Otherwise show as a five-step rating.">
-        <Toggle on={showPct} onChange={setShowPct} />
-      </SettingsRow>
-      <SettingsRow label="Sound on identification" hint="Play a soft chime when a result is ready.">
-        <Toggle on={sound} onChange={setSound} />
-      </SettingsRow>
-      <SettingsRow label="Default view" hint="What you see when opening the Collection.">
-        <SegmentedControl value={defaultView} options={["Grid", "List"]} onChange={setDefaultView} />
-      </SettingsRow>
+      {sound && (
+        <>
+          <SettingsRow label="Notification sound" hint="Pick the chime you prefer.">
+            <div style={{ display: "flex", gap: 6 }}>
+              {SOUNDS.map(s => {
+                const active = soundId === s.id;
+                return (
+                  <button key={s.id} onClick={() => {
+                    setSoundId(s.id); setSetting("soundId", s.id); preview(s.id);
+                  }} style={{
+                    appearance: "none", border: 0, cursor: "pointer",
+                    padding: "5px 12px", borderRadius: 5,
+                    background: active ? "#fff" : "transparent",
+                    color: active ? "var(--ink)" : "var(--ink-3)",
+                    fontFamily: "inherit", fontSize: 12, fontWeight: active ? 500 : 450,
+                    boxShadow: active ? "0 1px 2px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.06)" : "none",
+                  }}>{s.label}</button>
+                );
+              })}
+            </div>
+          </SettingsRow>
+          <SettingsRow label="Volume" hint="Adjust the notification loudness.">
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M2 6h2.5L8 3v10L4.5 10H2a1 1 0 01-1-1V7a1 1 0 011-1z" fill="var(--ink-3)" />
+                {volume > 0 && <path d="M10.5 4.5a4 4 0 010 7" stroke="var(--ink-3)" strokeWidth="1.2" strokeLinecap="round" fill="none" />}
+                {volume > 0.5 && <path d="M12.5 2.5a7 7 0 010 11" stroke="var(--ink-3)" strokeWidth="1.2" strokeLinecap="round" fill="none" />}
+              </svg>
+              <input type="range" min={0} max={1} step={0.05} value={volume}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  setVolume(v);
+                  setSetting("soundVolume", String(v));
+                }}
+                onPointerUp={() => preview(soundId)}
+                style={{ width: 100, accentColor: "var(--accent)" }}
+              />
+              <span style={{
+                fontFamily: "JetBrains Mono, monospace", fontSize: 11,
+                color: "var(--ink-3)", width: 32, textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+              }}>{Math.round(volume * 100)}%</span>
+            </div>
+          </SettingsRow>
+        </>
+      )}
     </div>
   );
 }
