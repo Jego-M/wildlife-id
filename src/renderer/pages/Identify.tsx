@@ -396,36 +396,36 @@ function CropStage({ imageUrl, imageFile, imageDims, crop, setCrop, onCancel, on
       x = clamp(x + dx, 0, 100 - w);
       y = clamp(y + dy, 0, 100 - h);
     } else {
-      // For square constraint: treat drag as a size change in both axes
+      // Square constraint: h_pct = w_pct * (imgW / imgH) for same pixel side
       const imageAspect = imageDims.w / imageDims.h;
 
       if (mode === "se" || mode === "e" || mode === "s") {
-        const newW = clamp(init.w + dx, minS, 100 - init.x);
-        const newH = newW * imageAspect; // same pixel side length
-        if (newH <= 100 - init.y) {
-          w = newW; h = newH;
-        }
+        const maxW = 100 - init.x;
+        const maxWByH = (100 - init.y) / imageAspect;
+        w = clamp(init.w + dx, minS, Math.min(maxW, maxWByH));
+        h = w * imageAspect;
       }
       if (mode === "sw" || mode === "w") {
-        const newW = clamp(init.w - dx, minS, init.x + init.w);
-        const newH = newW * imageAspect;
-        if (newH <= 100 - init.y) {
-          const nx = init.x + init.w - newW;
-          if (nx >= 0) { x = nx; w = newW; h = newH; }
-        }
+        const maxW = init.x + init.w;
+        const maxWByH = (100 - init.y) / imageAspect;
+        w = clamp(init.w - dx, minS, Math.min(maxW, maxWByH));
+        h = w * imageAspect;
+        x = init.x + init.w - w;
       }
       if (mode === "ne") {
-        const newW = clamp(init.w + dx, minS, 100 - init.x);
-        const newH = newW * imageAspect;
-        const ny = init.y + init.h - newH;
-        if (ny >= 0) { w = newW; h = newH; y = ny; }
+        const maxW = 100 - init.x;
+        const maxWByH = (init.y + init.h) / imageAspect;
+        w = clamp(init.w + dx, minS, Math.min(maxW, maxWByH));
+        h = w * imageAspect;
+        y = init.y + init.h - h;
       }
       if (mode === "nw" || mode === "n") {
-        const newW = clamp(init.w - dx, minS, init.x + init.w);
-        const newH = newW * imageAspect;
-        const nx = init.x + init.w - newW;
-        const ny = init.y + init.h - newH;
-        if (nx >= 0 && ny >= 0) { x = nx; y = ny; w = newW; h = newH; }
+        const maxW = init.x + init.w;
+        const maxWByH = (init.y + init.h) / imageAspect;
+        w = clamp(init.w - dx, minS, Math.min(maxW, maxWByH));
+        h = w * imageAspect;
+        x = init.x + init.w - w;
+        y = init.y + init.h - h;
       }
     }
     setCrop({ x, y, w, h });
