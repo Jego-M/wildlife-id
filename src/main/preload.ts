@@ -6,6 +6,7 @@ import type {
   CreateSightingPayload,
   ModelDownloadProgress,
   ModelsResponse,
+  StorageInfo,
   WildlifeApi,
 } from "../shared/types";
 
@@ -55,6 +56,12 @@ const api = {
 
     licenses: (): Promise<string> =>
       ipcRenderer.invoke("app:licenses"),
+
+    storageInfo: (): Promise<StorageInfo> =>
+      ipcRenderer.invoke("app:storage-info"),
+
+    clearLogs: (): Promise<void> =>
+      ipcRenderer.invoke("app:clear-logs"),
   },
 };
 

@@ -182,6 +182,7 @@ Fields:
     {
       "scientific_name": "Vulpes vulpes",
       "common_name": "Red Fox",
+      "display_label": "Red Fox",
       "taxonomy": ["Animalia","Chordata","Mammalia","Carnivora","Canidae","Vulpes","Vulpes vulpes"],
       "iucn_status": "Least Concern",
       "confidence": 0.87
@@ -189,6 +190,7 @@ Fields:
     {
       "scientific_name": "Vulpes lagopus",
       "common_name": "Arctic Fox",
+      "display_label": "Arctic Fox",
       "taxonomy": ["Animalia","Chordata","Mammalia","Carnivora","Canidae","Vulpes","Vulpes lagopus"],
       "iucn_status": "Least Concern",
       "confidence": 0.06
@@ -196,6 +198,7 @@ Fields:
     {
       "scientific_name": "Canis latrans",
       "common_name": "Coyote",
+      "display_label": "Coyote",
       "taxonomy": ["Animalia","Chordata","Mammalia","Carnivora","Canidae","Canis","Canis latrans"],
       "iucn_status": "Least Concern",
       "confidence": 0.03
@@ -207,6 +210,8 @@ Fields:
 `iucn_status` is nullable — not every species in the vocabulary has an IUCN assessment. When present, values are the standard Red List categories: `"Least Concern"`, `"Near Threatened"`, `"Vulnerable"`, `"Endangered"`, `"Critically Endangered"`, `"Extinct in the Wild"`, `"Extinct"`, `"Data Deficient"`, `"Not Evaluated"`.
 
 Confidence is the softmax of cosine similarities over the species vocabulary. The UI surfaces a low-confidence warning if the top value is below ~0.2 (tunable).
+
+`display_label` provides the best available English name for a species through a fallback chain: species common_name → genus vernacular (e.g. "foxes") → family vernacular (e.g. "typical owls") → order English noun (e.g. "owl") → class English noun (e.g. "insect") → null. The renderer uses `common_name ?? display_label ?? scientific_name` so most predictions show a readable English label even when the species lacks a specific common name.
 
 ---
 
@@ -222,7 +227,24 @@ For v1, the vocabulary covers **animals only** — interpreted broadly to includ
 
 Each species entry in the vocabulary carries: scientific name, common name(s), full taxonomy, and IUCN Red List conservation status (where the species has been assessed). The IUCN status is folded in at build time from a cached snapshot of the IUCN Red List API — no runtime network calls.
 
-The embeddings are generated once during the build process (not at user runtime) and shipped inside the backend binary. The build script and the source taxonomy list are part of the open-source repo so any contributor can reproduce or extend the vocabulary.
+The vocabulary is split into two artifacts that download separately:
+
+- **`species_embeddings.npz`** (per model, ~430 MB): a fp16 embedding matrix and a parallel `scientific_names` array. Row *i* of the matrix corresponds to `scientific_names[i]`. Different per model because v1 and v2 have different text encoders. Stored as float16 (half the disk size of float32 with no perceptible top-k impact); the predictor casts to float32 at load time so the matmul runs at full precision.
+- **`species_meta.sqlite`** (shared across models, ~30–50 MB): one row per species keyed on scientific name, holding common name, taxonomy fields, and IUCN status. Identical for both models, so it's downloaded once and reused.
+
+This split exists so common-name coverage can be improved in a release by reshipping only the small sqlite — no re-embedding, no re-downloading the per-model `.npz`. The build script (`scripts/build_embeddings.py`) and the source taxonomy list are part of the open-source repo so any contributor can reproduce or extend the vocabulary.
+
+### Common-name merge pipeline
+
+Common-name coverage is built up by `scripts/build_metadata.py`, which merges multiple authoritative vernacular databases on top of the spine produced by `build_embeddings.py`. Sources are applied in priority order; first hit wins. Species missed by every source keep whatever name was in the spine.
+
+| Source | Status | Notes |
+|---|---|---|
+| iNaturalist DwCA (`taxa.csv`) | shipped | Community-curated; biased toward observed species. The strongest single source for the casual-photography use case. |
+| GBIF Backbone (`Taxon.tsv` + `VernacularName.tsv`) | shipped | Broad but messier. Two-pass parser; respects `isPreferredName=true` flag. |
+| Wikidata `taxon common name` (P1843, en) | shipped | Long-tail coverage. The build path is offline: maintainers run `scripts/fetch_wikidata.py` to refresh `src/backend/data/wikidata_vernaculars.json` and commit the result, so contributor and CI builds never hit the network. |
+
+A `species_meta.provenance.json` is written next to the sqlite recording each source's path, SHA-256, names loaded, and species matched. Re-running the merger is idempotent: rows whose chosen name already matches the database stay untouched.
 
 ---
 

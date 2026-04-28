@@ -6,6 +6,7 @@ pydantic>=2.0.0
 
 # ── Model download ─────────────────────────────────────────────────────────────
 huggingface_hub>=0.23.0
+requests>=2.31.0  # vocab download in predictor.py + scripts/fetch_wikidata.py
 
 # ── Inference ──────────────────────────────────────────────────────────────────
 open-clip-torch>=2.26.1

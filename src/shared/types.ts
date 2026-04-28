@@ -15,6 +15,7 @@ export interface ModelsResponse {
 export interface Prediction {
   scientific_name: string;
   common_name: string | null;
+  display_label: string | null;
   taxonomy: string[];
   iucn_status: string | null;
   confidence: number;
@@ -62,6 +63,14 @@ export interface ModelDownloadProgress {
   error?: string;
 }
 
+export interface StorageInfo {
+  dataPath: string;
+  modelsBytes: number;
+  collectionBytes: number;
+  logsBytes: number;
+  diskAvailableBytes: number;
+}
+
 export interface IpcError {
   code: string;
   message: string;
@@ -89,5 +98,7 @@ export interface WildlifeApi {
     version: () => Promise<string>;
     openDataFolder: () => Promise<void>;
     licenses: () => Promise<string>;
+    storageInfo: () => Promise<StorageInfo>;
+    clearLogs: () => Promise<void>;
   };
 }

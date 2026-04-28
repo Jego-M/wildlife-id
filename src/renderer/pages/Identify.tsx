@@ -11,9 +11,9 @@ interface SamplePhoto {
 }
 
 const SAMPLE_PHOTOS: SamplePhoto[] = [
-  { id: "fox",  name: "red-fox-winter.png",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.99, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], url: "samples/red-fox-winter.png", thumbnail: "samples/red-fox-winter-thumb.png" },
+  { id: "fox",  name: "red-fox.png",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.99, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], url: "samples/red-fox.png", thumbnail: "samples/red-fox-thumb.png" },
   { id: "owl",  name: "great-horned-owl.png",  species: "Great Horned Owl", latin: "Bubo virginianus",   confidence: 0.99, palette: ["#5a4a36","#a08866","#2b231a","#c9b48f"], url: "samples/great-horned-owl.png", thumbnail: "samples/great-horned-owl-thumb.png" },
-  { id: "ladybug", name: "seven-spot-ladybug.png", species: "Seven-spot Ladybug",latin: "Coccinella septempunctata", confidence: 0.99, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], url: "samples/seven-spot-ladybug.png", thumbnail: "samples/seven-spot-ladybug-thumb.png" },
+  { id: "ladybird", name: "seven-spotted-ladybird-beetle.png", species: "Seven-spotted Ladybird Beetle",latin: "Coccinella septempunctata", confidence: 0.99, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], url: "samples/seven-spotted-ladybird-beetle.png", thumbnail: "samples/seven-spotted-ladybird-beetle-thumb.png" },
 ];
 
 interface Crop { x: number; y: number; w: number; h: number; }
@@ -164,13 +164,13 @@ export default function Identify() {
     setStage("empty");
   };
 
-  const resultTitle = predictions?.[0]?.common_name ?? predictions?.[0]?.scientific_name ?? "Unknown";
+  const resultTitle = predictions?.[0]?.common_name ?? predictions?.[0]?.display_label ?? predictions?.[0]?.scientific_name ?? "Unknown";
 
   const handleSave = useCallback(async () => {
     if (!predictions?.[0] || !modelUsed || !croppedBytes) return;
     await window.api.sightings.create({
       scientific_name: predictions[0].scientific_name,
-      common_name: predictions[0].common_name,
+      common_name: predictions[0].common_name ?? predictions[0].display_label,
       confidence: predictions[0].confidence,
       image_bytes: croppedBytes,
       model_used: modelUsed,
@@ -702,7 +702,7 @@ function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
           Identified
         </div>
         <div style={{ fontFamily: "Fraunces, serif", fontSize: 34, fontWeight: 500, letterSpacing: "-0.02em", color: "var(--ink)", lineHeight: 1.1, marginBottom: 4 }}>
-          {top.common_name ?? top.scientific_name}
+          {top.common_name ?? top.display_label ?? top.scientific_name}
         </div>
         <div style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 16, color: "var(--ink-3)" }}>{top.scientific_name}</div>
       </div>
@@ -734,7 +734,7 @@ function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < alts.length - 1 ? "0.5px solid var(--hair)" : "none" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: "var(--ink-2)", fontWeight: 450 }}>
-                    {a.common_name ?? a.scientific_name}{" "}
+                    {a.common_name ?? a.display_label ?? a.scientific_name}{" "}
                     <span style={{ fontFamily: "Fraunces, serif", fontStyle: "italic", fontSize: 12, color: "var(--ink-4)" }}>{a.scientific_name}</span>
                   </div>
                 </div>

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate species text embeddings from a taxonomy CSV.
+"""Generate species text embeddings + shared metadata sqlite.
+
+Outputs two artifacts:
+  - <model-dir>/<model-id>/species_embeddings.npz  (per-model, fp16 embeddings + sci_names)
+  - <vocab-dir>/species_meta.sqlite                 (shared across models)
 
 Full TreeOfLife vocabulary (~414k animal species, recommended):
     python -c "
@@ -17,20 +21,24 @@ Bundled mini-vocabulary (~200 species, fast dev iteration):
 iNaturalist DwCA format:
     python build_embeddings.py --inaturalist --species-csv /path/to/taxa.csv
 
-Options: --model-id, --model-dir, --output, --device
+Options: --model-id, --model-dir, --vocab-dir, --embeddings-out, --meta-out, --device
 """
 from __future__ import annotations
 
 import argparse
 import csv
-import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import open_clip
+
+# Allow `python scripts/build_embeddings.py` from the backend dir.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from vocab import save_embeddings, write_metadata_sqlite  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -56,19 +64,9 @@ def load_standard_csv(path: Path) -> list[dict]:
             if not sci:
                 continue
             genus = sci.split()[0]
-            taxonomy = [
-                row.get("kingdom", "").strip(),
-                row.get("phylum", "").strip(),
-                row.get("class", "").strip(),
-                row.get("order", "").strip(),
-                row.get("family", "").strip(),
-                genus,
-                sci,
-            ]
             species.append({
                 "scientific_name": sci,
                 "common_name": row.get("common_name", "").strip() or None,
-                "taxonomy": [t for t in taxonomy if t],
                 "iucn_status": row.get("iucn_status", "").strip() or None,
                 "kingdom": row.get("kingdom", "").strip(),
                 "phylum": row.get("phylum", "").strip(),
@@ -81,14 +79,7 @@ def load_standard_csv(path: Path) -> list[dict]:
 
 
 def load_treeoflife_csv(path: Path) -> list[dict]:
-    """Parse imageomics/TreeOfLife-10M metadata/species_level_taxonomy_chains.csv.
-
-    Download via:
-        from huggingface_hub import hf_hub_download
-        hf_hub_download('imageomics/TreeOfLife-10M',
-                         'metadata/species_level_taxonomy_chains.csv',
-                         repo_type='dataset', local_dir='/tmp/tol-meta')
-    """
+    """Parse imageomics/TreeOfLife-10M metadata/species_level_taxonomy_chains.csv."""
     def _common(name: str, lang: str) -> str | None:
         if not name.strip():
             return None
@@ -99,7 +90,7 @@ def load_treeoflife_csv(path: Path) -> list[dict]:
                 return names[i]
         return names[0] if names[0] else None
 
-    species = []
+    species: list[dict] = []
     seen: set[str] = set()
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -111,30 +102,24 @@ def load_treeoflife_csv(path: Path) -> list[dict]:
             if not sci or not cls or sci in seen:
                 continue
             seen.add(sci)
-            genus = row["Genus"].strip()
-            taxonomy = [t for t in [
-                row["Kingdom"].strip(), row["Phylum"].strip(), cls,
-                row["Order"].strip(), row["Family"].strip(), genus, sci,
-            ] if t]
             species.append({
                 "scientific_name": sci,
                 "common_name": _common(row.get("terminal_vernacular", ""), row.get("terminal_vernacular_lang", "")),
-                "taxonomy": taxonomy,
                 "iucn_status": None,
                 "kingdom": row["Kingdom"].strip(),
                 "phylum": row["Phylum"].strip(),
                 "class_": cls,
                 "order": row["Order"].strip(),
                 "family": row["Family"].strip(),
-                "genus": genus,
+                "genus": row["Genus"].strip(),
             })
     logger.info("Loaded %d animal species from TreeOfLife CSV", len(species))
     return species
 
 
 def load_inaturalist_csv(path: Path) -> list[dict]:
-    """Parse the iNaturalist DwCA taxa.csv — filters to animal species only."""
-    species = []
+    """Parse iNaturalist DwCA taxa.csv — filters to animal species only."""
+    species: list[dict] = []
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -149,28 +134,16 @@ def load_inaturalist_csv(path: Path) -> list[dict]:
             sci = row.get("scientificName", "").strip()
             if not sci:
                 continue
-            genus = sci.split()[0]
-            common = row.get("vernacularName", "").strip() or None
-            taxonomy = [
-                kingdom,
-                row.get("phylum", "").strip(),
-                class_,
-                row.get("order", "").strip(),
-                row.get("family", "").strip(),
-                genus,
-                sci,
-            ]
             species.append({
                 "scientific_name": sci,
-                "common_name": common,
-                "taxonomy": [t for t in taxonomy if t],
+                "common_name": row.get("vernacularName", "").strip() or None,
                 "iucn_status": None,
                 "kingdom": kingdom,
                 "phylum": row.get("phylum", "").strip(),
                 "class_": class_,
                 "order": row.get("order", "").strip(),
                 "family": row.get("family", "").strip(),
-                "genus": genus,
+                "genus": sci.split()[0],
             })
     logger.info("Filtered to %d animal species from iNaturalist CSV", len(species))
     return species
@@ -200,34 +173,48 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build species embeddings for Wildlife ID")
     parser.add_argument("--model-id", default="bioclip-v1", choices=list(MODEL_CONFIGS))
     parser.add_argument("--model-dir", default=None, help="Directory containing downloaded models")
+    parser.add_argument("--vocab-dir", default=None, help="Directory for shared metadata sqlite")
     parser.add_argument("--species-csv", default=None, help="Path to species CSV (default: bundled data/species.csv)")
-    parser.add_argument("--output", default=None, help="Output .npz path (default: <model-dir>/<model-id>/species_embeddings.npz)")
+    parser.add_argument("--embeddings-out", default=None, help="Output .npz path")
+    parser.add_argument("--meta-out", default=None, help="Output sqlite path")
     parser.add_argument("--inaturalist", action="store_true", help="Parse CSV as iNaturalist DwCA taxa.csv format")
-    parser.add_argument("--treeoflife", action="store_true", help="Parse CSV as TreeOfLife species_level_taxonomy_chains.csv (from imageomics/TreeOfLife-10M on HuggingFace)")
+    parser.add_argument("--treeoflife", action="store_true", help="Parse CSV as TreeOfLife species_level_taxonomy_chains.csv")
     parser.add_argument("--device", default=None, help="cpu / cuda / mps (auto-detected if omitted)")
+    parser.add_argument(
+        "--no-fp16",
+        action="store_true",
+        help="Save embeddings as float32 instead of float16. Doubles on-disk size; only useful for debugging precision issues.",
+    )
     args = parser.parse_args()
 
     cfg = MODEL_CONFIGS[args.model_id]
 
     # Resolve paths
     if args.model_dir is None:
-        import os
-        args.model_dir = os.path.join(os.path.expanduser("~"), ".config", "wildlife-id", "models")
+        args.model_dir = os.path.join(os.path.expanduser("~"), ".wildlife-id", "models")
     model_path = Path(args.model_dir) / args.model_id
+
+    if args.vocab_dir is None:
+        args.vocab_dir = str(Path(args.model_dir).parent / "vocab")
+    vocab_path = Path(args.vocab_dir)
 
     if args.species_csv is None:
         args.species_csv = str(Path(__file__).parent.parent / "data" / "species.csv")
     csv_path = Path(args.species_csv)
 
-    if args.output is None:
-        args.output = str(model_path / "species_embeddings.npz")
-    out_path = Path(args.output)
+    if args.embeddings_out is None:
+        args.embeddings_out = str(model_path / "species_embeddings.npz")
+    embeddings_out = Path(args.embeddings_out)
+
+    if args.meta_out is None:
+        args.meta_out = str(vocab_path / "species_meta.sqlite")
+    meta_out = Path(args.meta_out)
 
     # Find weight file
     weight_file = model_path / cfg["weight_file"]
     if not weight_file.exists():
         for ext in ("*.bin", "*.safetensors"):
-            found = list(f for f in model_path.rglob(ext) if ".cache" not in f.parts)
+            found = [f for f in model_path.rglob(ext) if ".cache" not in f.parts]
             if found:
                 weight_file = found[0]
                 break
@@ -265,13 +252,17 @@ def main() -> None:
 
     embeddings = generate(model, tokenizer, device, species)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        out_path,
-        embeddings=embeddings.numpy(),
-        species=np.array([json.dumps(sp, ensure_ascii=False) for sp in species], dtype=object),
-    )
-    logger.info("Saved %d embeddings → %s (%.1f MB)", len(species), out_path, out_path.stat().st_size / 1e6)
+    # Cast to fp16 for storage. Vectors are unit-normalised so values are in
+    # [-1, 1] — fp16's ~3 decimal digits of mantissa precision is well below
+    # the noise floor of softmax(top_k) over a vocabulary this size. Predictor
+    # casts back to fp32 at load time for the matmul.
+    array = embeddings.numpy()
+    if not args.no_fp16:
+        array = array.astype(np.float16)
+        logger.info("Saving embeddings as fp16 (use --no-fp16 to keep float32)")
+
+    save_embeddings(embeddings_out, array, [sp["scientific_name"] for sp in species])
+    write_metadata_sqlite(meta_out, species)
 
 
 if __name__ == "__main__":

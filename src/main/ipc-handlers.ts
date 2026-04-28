@@ -1,12 +1,12 @@
 import { ipcMain, app, shell, BrowserWindow } from "electron";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, statfsSync, readdirSync, statSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import log from "electron-log";
 import { getBackendUrl } from "./backend-launcher";
 import { getRepo } from "./database";
-import type { ModelDownloadProgress, CreateSightingPayload, NewSighting, Sighting } from "../shared/types";
+import type { ModelDownloadProgress, CreateSightingPayload, NewSighting, Sighting, StorageInfo } from "../shared/types";
 
 function backendError(channel: string, err: unknown): never {
   log.error(`${channel} failed`, err);
@@ -168,4 +168,60 @@ export function registerIpcHandlers(): void {
       return "(License file not found — run the build to generate it)";
     }
   });
+
+  ipcMain.handle("app:storage-info", (): StorageInfo => {
+    const userData = app.getPath("userData");
+    const modelsDir = path.join(userData, "models");
+    const imagesDir = path.join(userData, "images");
+    const dbPath = path.join(userData, "wildlife.db");
+    const logsDir = path.join(userData, "logs");
+
+    const modelsBytes = dirSize(modelsDir);
+    const collectionBytes = dirSize(imagesDir) + fileSize(dbPath);
+    const logsBytes = dirSize(logsDir);
+
+    let diskAvailableBytes = 0;
+    try {
+      const stat = statfsSync(userData);
+      diskAvailableBytes = stat.bavail * stat.bsize;
+    } catch {
+      // statfs may fail in unusual environments; leave as 0
+    }
+
+    return { dataPath: userData, modelsBytes, collectionBytes, logsBytes, diskAvailableBytes };
+  });
+
+  ipcMain.handle("app:clear-logs", () => {
+    const logsDir = path.join(app.getPath("userData"), "logs");
+    try {
+      const entries = readdirSync(logsDir);
+      for (const entry of entries) {
+        rmSync(path.join(logsDir, entry), { force: true });
+      }
+    } catch {
+      // logs dir may not exist yet
+    }
+  });
+}
+
+function dirSize(dirPath: string): number {
+  let total = 0;
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += dirSize(full);
+      } else if (entry.isFile()) {
+        try { total += statSync(full).size; } catch { /* skip */ }
+      }
+    }
+  } catch {
+    // directory may not exist
+  }
+  return total;
+}
+
+function fileSize(filePath: string): number {
+  try { return statSync(filePath).size; } catch { return 0; }
 }

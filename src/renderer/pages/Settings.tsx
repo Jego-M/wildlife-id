@@ -1,6 +1,7 @@
-import { useState, CSSProperties } from "react";
+import { useState, useEffect, CSSProperties } from "react";
 import { AppGlyph, Spinner } from "../components/ui";
 import { getSetting, setSetting } from "../lib/settings";
+import type { StorageInfo } from "../../shared/types";
 
 // ── Section type & nav ────────────────────────────────────────────────────────
 
@@ -369,26 +370,44 @@ function GeneralSection() {
 // ── Storage section ───────────────────────────────────────────────────────────
 
 function StorageSection() {
+  const [info, setInfo] = useState<StorageInfo | null>(null);
+
+  useEffect(() => {
+    window.api.app.storageInfo().then(setInfo);
+  }, []);
+
+  const displayPath = info
+    ? info.dataPath.replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~").replace(/^[A-Z]:\\Users\\[^/\\]+/, "~")
+    : "Loading…";
+
   return (
     <div style={{ padding: "28px 36px 36px", maxWidth: 720 }}>
       <SectionHeader title="Storage" subtitle="Where Wildlife ID keeps its files. Everything stays on your computer." />
-      <SettingsRow label="Library location" hint="~/Library/Application Support/Wildlife ID">
-        <button style={GHOST_BTN}>Reveal</button>
+      <SettingsRow label="Library location" hint={displayPath}>
+        <button style={GHOST_BTN} onClick={() => window.api.app.openDataFolder()}>Reveal</button>
       </SettingsRow>
-      <UsageBar />
-      <SettingsRow label="Clear cache" hint="Clears thumbnails and temporary previews (about 38 MB).">
-        <button style={GHOST_BTN}>Clear cache</button>
+      <UsageBar info={info} />
+      <SettingsRow label="Clear logs" hint={info ? `Application logs (${fmtBytes(info.logsBytes)})` : "Application logs"}>
+        <button style={GHOST_BTN} onClick={async () => {
+          await window.api.app.clearLogs();
+          const updated = await window.api.app.storageInfo();
+          setInfo(updated);
+        }}>Clear logs</button>
       </SettingsRow>
     </div>
   );
 }
 
-function UsageBar() {
+function UsageBar({ info }: { info: StorageInfo | null }) {
+  if (!info) return null;
+
+  const totalUsed = info.modelsBytes + info.collectionBytes + info.logsBytes;
   const segs = [
-    { label: "Models", pct: 0.46, color: "var(--accent)" },
-    { label: "Collection", pct: 0.18, color: "#8a9c84" },
-    { label: "Cache", pct: 0.04, color: "#c4cdb8" },
+    { label: "Models", bytes: info.modelsBytes, color: "var(--accent)" },
+    { label: "Collection", bytes: info.collectionBytes, color: "#8a9c84" },
+    { label: "Logs", bytes: info.logsBytes, color: "#c4cdb8" },
   ];
+
   return (
     <div style={{
       padding: "16px 18px", borderRadius: 10, background: "#fbfaf6",
@@ -398,22 +417,22 @@ function UsageBar() {
         display: "flex", justifyContent: "space-between",
         fontSize: 12, color: "var(--ink-3)", marginBottom: 8,
       }}>
-        <span>2.34 GB used</span>
-        <span style={{ color: "var(--ink-4)" }}>of 256 GB available</span>
+        <span>{fmtBytes(totalUsed)} used</span>
+        <span style={{ color: "var(--ink-4)" }}>of {fmtBytes(info.diskAvailableBytes + totalUsed)} available</span>
       </div>
       <div style={{
         display: "flex", height: 8, borderRadius: 999,
         overflow: "hidden", background: "var(--hair)",
       }}>
         {segs.map(s => (
-          <div key={s.label} style={{ width: `${s.pct * 100}%`, background: s.color }} />
+          totalUsed > 0 && <div key={s.label} style={{ width: `${(s.bytes / (info.diskAvailableBytes + totalUsed)) * 100}%`, background: s.color }} />
         ))}
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 11.5, color: "var(--ink-3)" }}>
         {segs.map(s => (
           <span key={s.label} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 7, height: 7, borderRadius: 2, background: s.color }} />
-            {s.label}
+            {s.label} ({fmtBytes(s.bytes)})
           </span>
         ))}
       </div>
@@ -421,12 +440,25 @@ function UsageBar() {
   );
 }
 
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 // ── About section ─────────────────────────────────────────────────────────────
 
 function AboutSection() {
+  const [version, setVersion] = useState("…");
+
+  useEffect(() => {
+    window.api.app.version().then(setVersion);
+  }, []);
+
   return (
     <div style={{ padding: "28px 36px 36px", maxWidth: 560 }}>
-      <SectionHeader title="About" subtitle="Made with care for naturalists everywhere." />
+      <SectionHeader title="About" subtitle="Made with care for wildlife enthusiasts everywhere." />
       <div style={{
         padding: "18px 20px", borderRadius: 12, background: "#fff",
         border: "0.5px solid var(--hair)",
@@ -444,7 +476,7 @@ function AboutSection() {
             Wildlife <span style={{ fontStyle: "italic", fontWeight: 400, color: "var(--accent-deep)" }}>ID</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>
-            Version 1.4.2 · Build 2026.04.21
+            Version {version}
           </div>
         </div>
       </div>
@@ -453,9 +485,30 @@ function AboutSection() {
         iNaturalist research-grade observations.
       </div>
       <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button style={GHOST_BTN}>Acknowledgements</button>
-        <button style={GHOST_BTN}>Open Source Licenses</button>
-        <button style={GHOST_BTN}>Privacy</button>
+        <a
+          href="https://github.com/Jego-M/wildlife-id#license"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...GHOST_BTN, textDecoration: "none" }}
+        >
+          Open Source Licenses
+        </a>
+      </div>
+      <div style={{
+        marginTop: 24, padding: "16px 20px", borderRadius: 10, background: "#fbfaf6",
+        border: "0.5px solid var(--hair)",
+      }}>
+        <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5 }}>
+          Enjoying Wildlife ID? Consider buying me a coffee to support development.
+        </div>
+        <a
+          href="https://buymeacoffee.com/jego"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...PRIMARY_BTN, marginTop: 12, textDecoration: "none" }}
+        >
+          Support this project
+        </a>
       </div>
     </div>
   );

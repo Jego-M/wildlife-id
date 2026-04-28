@@ -277,15 +277,36 @@ WildlifeId/
 │   ├── 8f2a...c1.jpg            # cropped images, UUID-named
 │   └── ...
 ├── models/
-│   ├── bioclip-v1/              # cached model weights
-│   │   └── open_clip_pytorch_model.bin
+│   ├── bioclip-v1/              # cached model weights + per-model embeddings
+│   │   ├── open_clip_pytorch_model.bin
+│   │   └── species_embeddings.npz
 │   └── bioclip-v2/
+│       ├── open_clip_pytorch_model.bin
+│       └── species_embeddings.npz
+├── vocab/
+│   └── species_meta.sqlite      # shared metadata (taxonomy, common names, IUCN)
 ├── logs/
 │   ├── main.log                 # rolling, 5 MB max, electron-log
 │   └── backend.log              # rolling, written by Python
 ├── backend.port                 # ephemeral, written each launch
 └── settings.json                # active model, low-confidence threshold, etc.
 ```
+
+**Why split per-model embeddings from shared metadata.** The `.npz` is a float
+matrix produced by *that* model's text encoder — incompatible across models —
+and is the file users care about for download size. The `species_meta.sqlite`
+is plain text data (taxonomy, common names, IUCN) that's identical regardless
+of which model is active, so it lives at a shared path and is downloaded once.
+Improving common-name coverage in a future release ships only this small
+sqlite, not the multi-hundred-MB embedding files.
+
+The `.npz` stores `embeddings: float16[N, D]` and a parallel `scientific_names:
+str[N]` array. Row `i` of the matrix corresponds to `scientific_names[i]`.
+On disk the embeddings are float16 (~430 MB for ~414k species); the predictor
+casts to float32 at load time so the inference matmul runs at full precision.
+At predict time, top-k indices look up scientific names → batched SELECT in
+the metadata sqlite for display fields. The per-model file owns the row→name
+mapping; the metadata sqlite is an unordered key-value store.
 
 **Why UUIDs for images?** Avoids collisions, avoids encoding species names in paths (which would mojibake for users with non-ASCII filenames), and makes `images/` safe to back up as an opaque blob.
 
@@ -525,6 +546,10 @@ A short cheat sheet of where the most-touched code lives:
 | `src/main/ipc-handlers.ts` | Renderer-facing API | Adding any feature |
 | `src/main/backend-launcher.ts` | Spawn / port / health logic | Rarely (once it works) |
 | `src/backend/predictor.py` | BioCLIP model loading + inference | Model upgrades, perf work |
+| `src/backend/vocab.py` | Embeddings I/O + metadata sqlite store | Schema changes, build-script tweaks |
+| `src/backend/sources/` | Vernacular-name source adapters (iNat, GBIF, Wikidata) | Adding a new common-name data source |
+| `src/backend/scripts/build_metadata.py` | Multi-source common-name merge into species_meta.sqlite | Improving name coverage between releases |
+| `src/backend/scripts/fetch_wikidata.py` | Wikidata SPARQL fetcher (network-only, off the build path) | Refreshing `data/wikidata_vernaculars.json` |
 
 If a PR touches any of these four files, the architecture doc should be re-read by the reviewer. Everything else is local change.
 
