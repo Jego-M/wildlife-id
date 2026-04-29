@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import log from "electron-log";
 import { getBackendUrl } from "./backend-launcher";
 import { getRepo } from "./database";
-import type { ModelDownloadProgress, CreateSightingPayload, NewSighting, Sighting, StorageInfo } from "../shared/types";
+import type { ModelDownloadProgress, CreateSightingPayload, NewSighting, Sighting, StorageInfo, WikipediaSummary } from "../shared/types";
 
 function backendError(channel: string, err: unknown): never {
   log.error(`${channel} failed`, err);
@@ -119,6 +119,36 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // ── Wikipedia ────────────────────────────────────────────────────────────────
+
+  ipcMain.handle("wiki:summary", async (_, scientificName: string): Promise<WikipediaSummary | null> => {
+    try {
+      const title = scientificName.replace(/ /g, "_");
+      const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+      log.info(`wiki:summary fetching ${url}`);
+      const res = await fetch(url, {
+        headers: { "User-Agent": "WildlifeID/0.1 (https://github.com/Jego-M/wildlife-id)" },
+      });
+      log.info(`wiki:summary response ${res.status}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as {
+        extract?: string;
+        thumbnail?: { source?: string };
+        content_urls?: { desktop?: { page?: string } };
+      };
+      if (!data.extract) return null;
+      return {
+        extract: data.extract,
+        thumbnailUrl: data.thumbnail?.source ?? null,
+        wikipediaUrl: data.content_urls?.desktop?.page ?? `https://en.wikipedia.org/wiki/${title}`,
+      };
+    } catch (err) {
+      log.error("wiki:summary failed", err);
+      return null;
+    }
+  });
+
   // ── Sightings ─────────────────────────────────────────────────────────────────
 
   ipcMain.handle("sightings:list", (_, search?: string) => {
@@ -142,7 +172,13 @@ export function registerIpcHandlers(): void {
         confidence: s.confidence,
         image_path: filename,
         model_used: s.model_used,
+        taxonomy_kingdom: s.taxonomy_kingdom ?? null,
+        taxonomy_phylum: s.taxonomy_phylum ?? null,
         taxonomy_class: s.taxonomy_class ?? null,
+        taxonomy_order: s.taxonomy_order ?? null,
+        taxonomy_family: s.taxonomy_family ?? null,
+        taxonomy_genus: s.taxonomy_genus ?? null,
+        iucn_status: s.iucn_status ?? null,
         date_observed: s.date_observed ?? null,
         location: s.location ?? null,
         comments: s.comments ?? null,

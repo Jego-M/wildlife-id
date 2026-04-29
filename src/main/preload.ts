@@ -7,6 +7,7 @@ import type {
   ModelDownloadProgress,
   ModelsResponse,
   StorageInfo,
+  WikipediaSummary,
   WildlifeApi,
 } from "../shared/types";
 
@@ -34,6 +35,11 @@ const api = {
   identify: {
     predict: (imageBytes: Uint8Array): Promise<PredictResponse> =>
       ipcRenderer.invoke("identify:predict", imageBytes),
+  },
+
+  wiki: {
+    summary: (scientificName: string): Promise<WikipediaSummary | null> =>
+      ipcRenderer.invoke("wiki:summary", scientificName),
   },
 
   sightings: {

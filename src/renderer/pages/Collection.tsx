@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { Sighting } from "../../shared/types";
+import { useSpeciesInfo } from "../lib/useSpeciesInfo";
 
 const ghostBtn: React.CSSProperties = {
   appearance: "none", border: "0.5px solid var(--hair-2)", background: "#fff",
@@ -56,6 +57,12 @@ export default function Collection() {
   }, []);
 
   useEffect(() => { loadSightings(); }, [loadSightings]);
+
+  useEffect(() => {
+    const handler = () => loadSightings();
+    window.addEventListener("sighting-saved", handler);
+    return () => window.removeEventListener("sighting-saved", handler);
+  }, [loadSightings]);
 
   const filtered = useMemo(() => {
     let r = sightings;
@@ -279,6 +286,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
   onDelete: (id: number) => void; onUpdated: () => void;
 }) {
   const displayName = item.common_name ?? item.scientific_name;
+  const { info: wikiInfo, loading: wikiLoading } = useSpeciesInfo(item.scientific_name);
   const [fields, setFields] = useState({
     date_observed: item.date_observed ?? "",
     location: item.location ?? "",
@@ -342,6 +350,48 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
               <span style={{ fontFamily: "Fraunces, serif", fontSize: 18, fontWeight: 500, color: "var(--ink)" }}>{Math.round(item.confidence * 100)}%</span>
             </div>
           </div>
+
+          {(() => {
+            const taxonRanks = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus"];
+            const taxonValues = [
+              item.taxonomy_kingdom, item.taxonomy_phylum, item.taxonomy_class,
+              item.taxonomy_order, item.taxonomy_family, item.taxonomy_genus,
+            ];
+            const chips: { rank: string; name: string }[] = [];
+            taxonRanks.forEach((rank, i) => {
+              if (taxonValues[i]) chips.push({ rank, name: taxonValues[i]! });
+            });
+            if (item.iucn_status) chips.push({ rank: "Status", name: item.iucn_status });
+            if (chips.length === 0) return null;
+            return (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "12px 14px", background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)", marginBottom: 22 }}>
+                {chips.map(({ rank, name }) => (
+                  <div key={rank} style={{ display: "inline-flex", alignItems: "baseline", gap: 6, padding: "2px 4px" }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" as const, color: "var(--ink-4)" }}>{rank}</span>
+                    <span style={{ fontSize: 12.5, color: "var(--ink-2)", fontWeight: 450 }}>{name}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {(wikiLoading || wikiInfo) && (
+            <div style={{ padding: "14px 16px", background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)", marginBottom: 22 }}>
+              {wikiLoading ? (
+                <div style={{ fontSize: 13, color: "var(--ink-4)", fontStyle: "italic" }}>Loading description…</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: wikiInfo?.wikipediaUrl ? 10 : 0 }}>{wikiInfo?.extract}</div>
+                  {wikiInfo?.wikipediaUrl && (
+                    <button onClick={() => window.api.app.openExternal(wikiInfo.wikipediaUrl)} style={{ appearance: "none", border: 0, background: "none", color: "var(--accent-deep)", fontFamily: "inherit", fontSize: 12, fontWeight: 500, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}>
+                      Read more on Wikipedia
+                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M3 1.5h5.5V7M8.5 1.5L3 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div style={{ marginBottom: 22 }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>

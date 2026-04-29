@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { PhotoBitmap, Spinner } from "../components/ui";
 import { getSetting } from "../lib/settings";
+import { useSpeciesInfo } from "../lib/useSpeciesInfo";
 import type { Prediction, ModelId } from "../../shared/types";
 
 interface SamplePhoto {
@@ -175,8 +176,15 @@ export default function Identify() {
       confidence: predictions[0].confidence,
       image_bytes: croppedBytes,
       model_used: modelUsed,
-      taxonomy_class: predictions[0].animal_class ?? null,
+      taxonomy_kingdom: predictions[0].taxonomy[0] ?? null,
+      taxonomy_phylum: predictions[0].taxonomy[1] ?? null,
+      taxonomy_class: predictions[0].taxonomy[2] ?? predictions[0].animal_class ?? null,
+      taxonomy_order: predictions[0].taxonomy[3] ?? null,
+      taxonomy_family: predictions[0].taxonomy[4] ?? null,
+      taxonomy_genus: predictions[0].taxonomy[5] ?? null,
+      iucn_status: predictions[0].iucn_status ?? null,
     });
+    window.dispatchEvent(new CustomEvent("sighting-saved"));
   }, [predictions, modelUsed, croppedBytes]);
 
   return (
@@ -722,6 +730,7 @@ function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
   const [saving, setSaving] = useState(false);
   const top = predictions[0];
   const alts = predictions.slice(1);
+  const { info: wikiInfo, loading: wikiLoading } = useSpeciesInfo(top.scientific_name);
 
   const taxonChips: { rank: string; name: string }[] = top.taxonomy.map((name, i) => ({
     rank: TAXON_RANKS[i] ?? `Level ${i + 1}`,
@@ -760,6 +769,24 @@ function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
           </div>
         ))}
       </div>
+
+      {(wikiLoading || wikiInfo) && (
+        <div style={{ padding: "14px 16px", background: "#fbfaf6", borderRadius: 8, border: "0.5px solid var(--hair)" }}>
+          {wikiLoading ? (
+            <div style={{ fontSize: 13, color: "var(--ink-4)", fontStyle: "italic" }}>Loading description…</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: wikiInfo?.wikipediaUrl ? 10 : 0 }}>{wikiInfo?.extract}</div>
+              {wikiInfo?.wikipediaUrl && (
+                <button onClick={() => window.api.app.openExternal(wikiInfo.wikipediaUrl)} style={{ appearance: "none", border: 0, background: "none", color: "var(--accent-deep)", fontFamily: "inherit", fontSize: 12, fontWeight: 500, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}>
+                  Read more on Wikipedia
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M3 1.5h5.5V7M8.5 1.5L3 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {alts.length > 0 && (
         <div>

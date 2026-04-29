@@ -47,7 +47,13 @@ export interface Sighting {
   confidence: number;
   image_path: string;
   model_used: ModelId;
+  taxonomy_kingdom: string | null;
+  taxonomy_phylum: string | null;
   taxonomy_class: string | null;
+  taxonomy_order: string | null;
+  taxonomy_family: string | null;
+  taxonomy_genus: string | null;
+  iucn_status: string | null;
   date_observed: string | null;
   location: string | null;
   comments: string | null;
@@ -62,7 +68,13 @@ export interface CreateSightingPayload {
   confidence: number;
   image_bytes: Uint8Array;
   model_used: ModelId;
+  taxonomy_kingdom?: string | null;
+  taxonomy_phylum?: string | null;
   taxonomy_class?: string | null;
+  taxonomy_order?: string | null;
+  taxonomy_family?: string | null;
+  taxonomy_genus?: string | null;
+  iucn_status?: string | null;
   date_observed?: string | null;
   location?: string | null;
   comments?: string | null;
@@ -89,6 +101,12 @@ export interface IpcError {
   message: string;
 }
 
+export interface WikipediaSummary {
+  extract: string;
+  thumbnailUrl: string | null;
+  wikipediaUrl: string;
+}
+
 // Shape of the contextBridge API exposed by src/main/preload.ts.
 // Used in the renderer for window.api typing and in preload.ts for satisfies check.
 export interface WildlifeApi {
@@ -101,6 +119,9 @@ export interface WildlifeApi {
   };
   identify: {
     predict: (imageBytes: Uint8Array) => Promise<PredictResponse>;
+  };
+  wiki: {
+    summary: (scientificName: string) => Promise<WikipediaSummary | null>;
   };
   sightings: {
     list: (search?: string) => Promise<Sighting[]>;
