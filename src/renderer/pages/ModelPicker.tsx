@@ -20,6 +20,10 @@ export default function ModelPicker({
       setProgress(p);
       if (p.status === "ready") {
         setDone(true);
+        // Persist the user's choice so the backend boots into it on restart.
+        window.api.models.select(MODEL_MAP[selected]).catch(() => {
+          // Non-fatal — predict will work for the rest of this session.
+        });
       }
       if (p.status === "error") {
         setError(p.error ?? "Download failed");

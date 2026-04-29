@@ -8,12 +8,13 @@ interface SamplePhoto {
   confidence: number; palette: string[];
   url: string;
   thumbnail: string;
+  attribution: { name: string; url: string };
 }
 
 const SAMPLE_PHOTOS: SamplePhoto[] = [
-  { id: "fox",  name: "red-fox.png",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.99, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], url: "samples/red-fox.png", thumbnail: "samples/red-fox-thumb.png" },
-  { id: "owl",  name: "great-horned-owl.png",  species: "Great Horned Owl", latin: "Bubo virginianus",   confidence: 0.99, palette: ["#5a4a36","#a08866","#2b231a","#c9b48f"], url: "samples/great-horned-owl.png", thumbnail: "samples/great-horned-owl-thumb.png" },
-  { id: "ladybird", name: "seven-spotted-ladybird-beetle.png", species: "Seven-spotted Ladybird Beetle",latin: "Coccinella septempunctata", confidence: 0.99, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], url: "samples/seven-spotted-ladybird-beetle.png", thumbnail: "samples/seven-spotted-ladybird-beetle-thumb.png" },
+  { id: "fox",  name: "red-fox.png",    species: "Red Fox",          latin: "Vulpes vulpes",      confidence: 0.99, palette: ["#7e5a36","#b88a52","#3b2c1c","#d4b48a"], url: "samples/red-fox.png", thumbnail: "samples/red-fox-thumb.png", attribution: { name: "Zdeněk Macháček", url: "https://unsplash.com/@zmachacek" } },
+  { id: "owl",  name: "great-horned-owl.png",  species: "Great Horned Owl", latin: "Bubo virginianus",   confidence: 0.99, palette: ["#5a4a36","#a08866","#2b231a","#c9b48f"], url: "samples/great-horned-owl.png", thumbnail: "samples/great-horned-owl-thumb.png", attribution: { name: "Ryk Naves", url: "https://unsplash.com/@ryk" } },
+  { id: "ladybird", name: "seven-spotted-ladybird-beetle.png", species: "Seven-spotted Ladybird Beetle",latin: "Coccinella septempunctata", confidence: 0.99, palette: ["#4d6a3a","#8aa66a","#2d3e22","#cfd9b3"], url: "samples/seven-spotted-ladybird-beetle.png", thumbnail: "samples/seven-spotted-ladybird-beetle-thumb.png", attribution: { name: "Anton Atanasov", url: "https://unsplash.com/@blooddrainer" } },
 ];
 
 interface Crop { x: number; y: number; w: number; h: number; }
@@ -319,11 +320,14 @@ function DropZone({ onFile, onLoadSample }: { onFile: (f: File) => void; onLoadS
           {SAMPLE_PHOTOS.map(p => (
             <div key={p.id} onClick={() => onLoadSample(p)} style={{
               border: "0.5px solid var(--hair)", background: "#fff",
-              borderRadius: 10, overflow: "hidden",
+              borderRadius: 10, position: "relative",
               display: "flex", alignItems: "center", gap: 12,
               paddingRight: 14, cursor: "pointer",
             }}>
-              <img src={p.thumbnail} alt={p.species} style={{ width: 56, height: 56, flexShrink: 0, objectFit: "cover" }} />
+              <div style={{ position: "relative", flexShrink: 0, width: 56, height: 56 }}>
+                <img src={p.thumbnail} alt={p.species} style={{ width: 56, height: 56, objectFit: "cover", display: "block", borderRadius: "9px 0 0 9px" }} />
+                <AttributionBadge name={p.attribution.name} url={p.attribution.url} />
+              </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{
                   fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 14.5,
@@ -339,6 +343,37 @@ function DropZone({ onFile, onLoadSample }: { onFile: (f: File) => void; onLoadS
         </div>
       </div>
     </div>
+  );
+}
+
+function AttributionBadge({ name, url }: { name: string; url: string }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <>
+      <button
+        onClick={e => { e.stopPropagation(); window.api.app.openExternal(url); }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          position: "absolute", bottom: 3, right: 3,
+          width: 15, height: 15, borderRadius: "50%",
+          background: "rgba(0,0,0,0.52)", border: "none",
+          color: "#fff", fontSize: 8, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", padding: 0, lineHeight: 1,
+        }}
+      >©</button>
+      {hovered && (
+        <div style={{
+          position: "absolute", bottom: 20, right: 0,
+          background: "rgba(15,20,15,0.88)", color: "#fff",
+          fontSize: 10.5, padding: "4px 8px", borderRadius: 5,
+          whiteSpace: "nowrap", zIndex: 10, pointerEvents: "none",
+        }}>
+          Photo by {name}
+        </div>
+      )}
+    </>
   );
 }
 

@@ -21,6 +21,9 @@ const api = {
     download: (id: ModelId): Promise<void> =>
       ipcRenderer.invoke("models:download", id),
 
+    remove: (id: ModelId): Promise<void> =>
+      ipcRenderer.invoke("models:remove", id),
+
     onDownloadProgress: (cb: (p: ModelDownloadProgress) => void): (() => void) => {
       const handler = (_: IpcRendererEvent, p: ModelDownloadProgress) => cb(p);
       ipcRenderer.on("models:download-progress", handler);
@@ -53,6 +56,9 @@ const api = {
 
     openDataFolder: (): Promise<void> =>
       ipcRenderer.invoke("app:open-data-folder"),
+
+    openExternal: (url: string): Promise<void> =>
+      ipcRenderer.invoke("app:open-external", url),
 
     licenses: (): Promise<string> =>
       ipcRenderer.invoke("app:licenses"),

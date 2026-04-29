@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Generator
 
 import uvicorn
 from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -43,7 +44,7 @@ app.add_middleware(
 )
 
 
-# ── Endpoints ──────────────────────────────────────────────────────────────────
+# ── Endpoints ──────────────────────────────────────────────────
 
 
 @app.get("/health")
@@ -65,11 +66,41 @@ class SelectModelRequest(BaseModel):
     model_id: str
 
 
+class RemoveModelRequest(BaseModel):
+    model_id: str
+
+
+class DownloadModelRequest(BaseModel):
+    model_id: str
+
+
 @app.post("/select_model")
 async def select_model(req: SelectModelRequest) -> dict:
     assert predictor is not None
-    predictor.select_model(req.model_id)
-    return {"status": "ok", "active_model": req.model_id}
+    try:
+        predictor.select_model(req.model_id)
+        return {"status": "ok", "active_model": req.model_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/download_model")
+async def download_model(req: DownloadModelRequest) -> StreamingResponse:
+    assert predictor is not None
+    def event_stream() -> Generator[str, None, None]:
+        for progress in predictor.download_model(req.model_id):
+            yield f"data: {json.dumps(progress)}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/remove_model")
+async def remove_model(req: RemoveModelRequest) -> dict:
+    assert predictor is not None
+    try:
+        predictor.remove_model(req.model_id)
+        return {"status": "ok"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/predict")
@@ -82,22 +113,7 @@ async def predict(
     return predictor.predict(image_bytes, top_k=top_k)
 
 
-class DownloadModelRequest(BaseModel):
-    model_id: str
-
-
-@app.post("/download_model")
-async def download_model(req: DownloadModelRequest) -> StreamingResponse:
-    assert predictor is not None
-
-    def event_stream() -> Generator[str, None, None]:
-        for progress in predictor.download_model(req.model_id):
-            yield f"data: {json.dumps(progress)}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
-# ── Port-file helpers ──────────────────────────────────────────────────────────
+# ── Port-file helpers ──────────────────────────────────────────
 
 
 def pick_free_port() -> int:
@@ -113,7 +129,7 @@ def write_port_file(path: str, port: int) -> None:
     os.replace(tmp, path)  # atomic rename
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────
 
 
 if __name__ == "__main__":

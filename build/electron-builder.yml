@@ -1,6 +1,6 @@
 appId: org.wildlifeid.app
 productName: Wildlife ID
-
+icon: assets/icon.png
 directories:
   output: dist/installers
 

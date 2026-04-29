@@ -52,7 +52,7 @@ ANIMAL_CLASSES = {
 
 MODEL_CONFIGS = {
     "bioclip-v1": {"hf_repo": "imageomics/bioclip", "arch": "ViT-B-16", "weight_file": "open_clip_pytorch_model.bin"},
-    "bioclip-v2": {"hf_repo": "imageomics/bioclip-2", "arch": "ViT-B-16", "weight_file": "open_clip_pytorch_model.bin"},
+    "bioclip-v2": {"hf_repo": "imageomics/bioclip-2", "arch": "ViT-L-14", "weight_file": "open_clip_pytorch_model.bin"},
 }
 
 
@@ -185,6 +185,11 @@ def main() -> None:
         action="store_true",
         help="Save embeddings as float32 instead of float16. Doubles on-disk size; only useful for debugging precision issues.",
     )
+    parser.add_argument(
+        "--skip-meta",
+        action="store_true",
+        help="Skip writing/upserting the metadata sqlite. Use when re-building per-model embeddings on a system that already has a richer meta sqlite (e.g. merged via build_metadata.py).",
+    )
     args = parser.parse_args()
 
     cfg = MODEL_CONFIGS[args.model_id]
@@ -262,7 +267,10 @@ def main() -> None:
         logger.info("Saving embeddings as fp16 (use --no-fp16 to keep float32)")
 
     save_embeddings(embeddings_out, array, [sp["scientific_name"] for sp in species])
-    write_metadata_sqlite(meta_out, species)
+    if args.skip_meta:
+        logger.info("Skipping metadata sqlite write (--skip-meta)")
+    else:
+        write_metadata_sqlite(meta_out, species)
 
 
 if __name__ == "__main__":

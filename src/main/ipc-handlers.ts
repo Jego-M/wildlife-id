@@ -38,9 +38,28 @@ export function registerIpcHandlers(): void {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_id: modelId }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${res.status}`);
+      }
     } catch (err) {
       backendError("models:select", err);
+    }
+  });
+
+  ipcMain.handle("models:remove", async (_, modelId: string) => {
+    try {
+      const res = await fetch(`${getBackendUrl()}/remove_model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      backendError("models:remove", err);
     }
   });
 
@@ -156,6 +175,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("app:open-data-folder", () => {
     shell.openPath(app.getPath("userData"));
+  });
+
+  ipcMain.handle("app:open-external", (_event, url: string) => {
+    shell.openExternal(url);
   });
 
   ipcMain.handle("app:licenses", () => {

@@ -1,10 +1,19 @@
 export type ModelId = "bioclip-v1" | "bioclip-v2";
 
+export interface ModelArtifactStatus {
+  weights: boolean;
+  embeddings: boolean;
+  meta: boolean;
+}
+
 export interface ModelInfo {
   id: ModelId;
   name: string;
   size_mb: number;
+  /** Strict: true only when all three artifacts are present and the model is loadable. */
   downloaded: boolean;
+  /** Per-artifact presence — lets the UI show "Resume download" for partial state. */
+  status: ModelArtifactStatus;
 }
 
 export interface ModelsResponse {
@@ -83,6 +92,7 @@ export interface WildlifeApi {
     list: () => Promise<ModelsResponse>;
     select: (id: ModelId) => Promise<void>;
     download: (id: ModelId) => Promise<void>;
+    remove: (id: ModelId) => Promise<void>;
     onDownloadProgress: (cb: (p: ModelDownloadProgress) => void) => () => void;
   };
   identify: {
@@ -97,6 +107,7 @@ export interface WildlifeApi {
   app: {
     version: () => Promise<string>;
     openDataFolder: () => Promise<void>;
+    openExternal: (url: string) => Promise<void>;
     licenses: () => Promise<string>;
     storageInfo: () => Promise<StorageInfo>;
     clearLogs: () => Promise<void>;
