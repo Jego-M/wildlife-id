@@ -7,7 +7,7 @@ import type { StorageInfo, ModelId, ModelsResponse, ModelDownloadProgress } from
 // SI MB/GB rather than the 1024-based fmtBytes helper used for disk usage.
 function fmtModelSize(bytes: number): string {
   if (bytes < 1_000_000_000) return `${Math.round(bytes / 1_000_000)} MB`;
-  return `${(Math.round(bytes / 100_000_000) / 10).toFixed(1)} GB`;
+  return `${parseFloat((bytes / 1_000_000_000).toFixed(2))} GB`;
 }
 
 // ── Section type & nav ────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ function ModelsSection() {
     data ? (infoFor(id)?.downloaded ?? false) : id === "bioclip-v1";
   const sizeFor = (id: ModelId, fallback: string): string => {
     const info = infoFor(id);
-    return info ? fmtModelSize(info.size_bytes) : fallback;
+    return info ? `~${fmtModelSize(info.size_bytes)}` : fallback;
   };
 
   const activeModelId: ModelId = activeUi === "accurate" ? "bioclip-v2" : "bioclip-v1";
@@ -152,7 +152,7 @@ function ModelsSection() {
     <div style={{ padding: "28px 36px 36px", maxWidth: 720 }}>
       <SectionHeader
         title="AI Models"
-        subtitle="Choose which on-device model identifies your photos. You can keep both installed and switch at any time."
+        subtitle="Choose which model identifies your photos. You can keep both installed and switch at any time."
       />
 
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
@@ -167,7 +167,7 @@ function ModelsSection() {
           description="A compact, distilled model tuned for everyday use. Handles common birds, mammals, reptiles, and insects with high confidence."
           stats={[
             { k: "Speed", v: "1–2 sec / image" },
-            { k: "Size", v: sizeFor("bioclip-v1", "604 MB") },
+            { k: "Size", v: sizeFor("bioclip-v1", "~604 MB") },
             { k: "Hardware", v: "Any modern computer" },
             { k: "Version", v: "BioCLIP 1" },
           ]}
@@ -187,7 +187,7 @@ function ModelsSection() {
           description="A larger model with finer-grained recognition. Better at subspecies, juveniles, and uncommon visitors. Needs more memory."
           stats={[
             { k: "Speed", v: "3–6 sec / image" },
-            { k: "Size", v: sizeFor("bioclip-v2", "1.74 GB") },
+            { k: "Size", v: sizeFor("bioclip-v2", "~1.74 GB") },
             { k: "Hardware", v: "16 GB+ RAM" },
             { k: "Version", v: "BioCLIP 2" },
           ]}
@@ -697,7 +697,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
       }}>{title}</h2>
       <p style={{
         fontSize: 13, color: "var(--ink-3)",
-        margin: "6px 0 0", lineHeight: 1.5, maxWidth: 540,
+        margin: "6px 0 0", lineHeight: 1.5, maxWidth: 600,
       }}>{subtitle}</p>
     </div>
   );

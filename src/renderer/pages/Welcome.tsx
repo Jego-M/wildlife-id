@@ -38,7 +38,7 @@ export default function Welcome({ onContinue }: { onContinue: () => void }) {
           }}>
             Drop in a photo of an animal and Wildlife ID names the species using an
             on‑device AI model. Save findings to a personal collection that stays
-            yours — it all works offline, and nothing ever leaves your machine.
+            yours. It all works offline, and nothing ever leaves your machine.
           </p>
 
           <div style={{ display: "flex", gap: 28, marginBottom: 40 }}>
@@ -55,7 +55,7 @@ export default function Welcome({ onContinue }: { onContinue: () => void }) {
                   strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </PrimaryButton>
-            <span style={{ fontSize: 13, color: "var(--ink-3)" }}>Takes about a minute</span>
+            
           </div>
         </div>
 
@@ -76,7 +76,7 @@ export default function Welcome({ onContinue }: { onContinue: () => void }) {
 
 function FeatureChip({ icon, label }: { icon: "offline" | "lock" | "collection"; label: string }) {
   const icons: Record<string, React.ReactNode> = {
-    offline: <path d="M2 10c3-3 9-3 12 0M4.5 12.5c2-2 5-2 7 0M7 15l1 1 1-1"
+    offline: <path d="M2 6c3-3 9-3 12 0M4.5 8.5c2-2 5-2 7 0M7 11l1 1 1-1"
       stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />,
     lock: <>
       <rect x="3.5" y="7.5" width="9" height="7" rx="1.5" stroke="currentColor"
@@ -96,7 +96,7 @@ function FeatureChip({ icon, label }: { icon: "offline" | "lock" | "collection";
         background: "var(--accent-softer)",
         border: "0.5px solid rgba(106,133,102,0.25)",
         color: "var(--accent-deep)",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        display: "inline-flex", alignItems: "center", justifyContent: "center"
       }}>
         <svg width="16" height="16" viewBox="0 0 16 16">{icons[icon]}</svg>
       </span>

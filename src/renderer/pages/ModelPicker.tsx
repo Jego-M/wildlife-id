@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback, CSSProperties } from "react";
 import { Wordmark, Spinner, StepDots, PrimaryButton, GhostButton } from "../components/ui";
-import type { ModelDownloadProgress, ModelId } from "../../shared/types";
+import type { ModelDownloadProgress, ModelId, ModelsResponse } from "../../shared/types";
+
+function fmtModelSize(bytes: number): string {
+  if (bytes < 1_000_000_000) return `${Math.round(bytes / 1_000_000)} MB`;
+  return `${parseFloat((bytes / 1_000_000_000).toFixed(2))} GB`;
+}
 
 const MODEL_MAP = { fast: "bioclip-v1" as ModelId, accurate: "bioclip-v2" as ModelId };
 
@@ -12,6 +17,11 @@ export default function ModelPicker({
   const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelsData, setModelsData] = useState<ModelsResponse | null>(null);
+
+  useEffect(() => {
+    window.api.models.list().then(setModelsData).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!downloading) return;
@@ -52,6 +62,13 @@ export default function ModelPicker({
     ? Math.min(1, progress.bytes_downloaded / progress.bytes_total)
     : 0;
 
+  const sizeFor = (id: ModelId, fallback: string) => {
+    const info = modelsData?.available.find(m => m.id === id);
+    return info ? `~${fmtModelSize(info.size_bytes)}` : fallback;
+  };
+  const bytesFor = (id: ModelId) =>
+    modelsData?.available.find(m => m.id === id)?.size_bytes ?? 0;
+
   return (
     <div style={{
       height: "100%", display: "flex", flexDirection: "column",
@@ -87,8 +104,8 @@ export default function ModelPicker({
           Which AI model would you like to use?
         </h2>
         <p style={{ fontSize: 14.5, lineHeight: 1.55, color: "var(--ink-3)", margin: 0, maxWidth: 560 }}>
-          Both run entirely on your device. Pick the one that suits your hardware —
-          you can switch anytime.
+          Both run entirely on your device. You can switch anytime.
+
         </p>
       </div>
 
@@ -99,9 +116,10 @@ export default function ModelPicker({
           subtitle="Best for most laptops"
           stats={[
             { label: "Speed", value: "1–2 sec", sub: "per image" },
-            { label: "Size", value: "600 MB", sub: "download" },
+            { label: "Size", value: sizeFor("bioclip-v1", "~1.1 GB"), sub: "download" },
             { label: "Hardware", value: "Any modern computer", sub: "" },
           ]}
+          totalBytes={bytesFor("bioclip-v1")}
           selected={selected === "fast"}
           disabled={downloading}
           onSelect={() => setSelected("fast")}
@@ -116,9 +134,10 @@ export default function ModelPicker({
           subtitle="Slightly more accurate, a bit slower"
           stats={[
             { label: "Speed", value: "3–6 sec", sub: "per image" },
-            { label: "Size", value: "1.7 GB", sub: "download" },
+            { label: "Size", value: sizeFor("bioclip-v2", "~2.4 GB"), sub: "download" },
             { label: "Hardware", value: "16 GB+ RAM recommended", sub: "" },
           ]}
+          totalBytes={bytesFor("bioclip-v2")}
           selected={selected === "accurate"}
           disabled={downloading}
           onSelect={() => setSelected("accurate")}
@@ -191,12 +210,12 @@ interface ModelCardProps {
   id: string; name: string; subtitle: string; stats: StatItem[];
   selected: boolean; recommended?: boolean; disabled: boolean;
   onSelect: () => void; downloading: boolean; progressPct: number;
-  progress: ModelDownloadProgress | null; done: boolean;
+  progress: ModelDownloadProgress | null; done: boolean; totalBytes: number;
 }
 
 function ModelCard({
   id, name, subtitle, stats, selected, recommended, onSelect, disabled,
-  downloading, progressPct, progress, done,
+  downloading, progressPct, progress, done, totalBytes,
 }: ModelCardProps) {
   const dim = disabled && !selected;
   return (
@@ -265,12 +284,12 @@ function ModelCard({
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
         {downloading ? (
-          <DownloadStatus progressPct={progressPct} progress={progress} done={done} size={id === "fast" ? "600 MB" : "1.7 GB"} />
+          <DownloadStatus progressPct={progressPct} progress={progress} done={done} totalBytes={totalBytes} />
         ) : (
           <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)", margin: 0 }}>
             {id === "fast"
               ? "A compact, distilled model tuned for everyday use. Handles common birds, mammals, reptiles, and insects with high confidence."
-              : "A larger model with finer-grained recognition — better at subspecies, juveniles, and uncommon visitors. Needs more memory."}
+              : "A larger model with finer-grained recognition. Better at subspecies, juveniles, and uncommon visitors. Needs more memory."}
           </p>
         )}
       </div>
@@ -298,15 +317,13 @@ function SelectionMark({ selected }: { selected: boolean }) {
 }
 
 function DownloadStatus({
-  progressPct, progress, done, size,
-}: { progressPct: number; progress: ModelDownloadProgress | null; done: boolean; size: string }) {
+  progressPct, progress, done, totalBytes,
+}: { progressPct: number; progress: ModelDownloadProgress | null; done: boolean; totalBytes: number }) {
   const pct = Math.round(progressPct * 100);
-  const sizeVal = parseFloat(size);
-  const downloaded = progress
-    ? (progress.bytes_downloaded / 1_000_000).toFixed(progress.bytes_downloaded > 1_000_000_000 ? 1 : 0)
-    : "0";
-  const unit = size.includes("GB") ? "GB" : "MB";
-  const totalDisplay = unit === "GB" ? (sizeVal).toFixed(1) : sizeVal.toFixed(0);
+  const downloadedBytes = progress?.bytes_downloaded ?? 0;
+  const actualTotal = progress && progress.bytes_total > 0 ? progress.bytes_total : totalBytes;
+  const downloadedDisplay = fmtModelSize(downloadedBytes);
+  const totalDisplay = actualTotal > 0 ? fmtModelSize(actualTotal) : "—";
 
   return (
     <div>
@@ -326,7 +343,7 @@ function DownloadStatus({
           fontFamily: "JetBrains Mono, monospace", fontSize: 11.5,
           color: "var(--ink-3)",
         }}>
-          {downloaded} {unit} / {totalDisplay} {unit}
+          {downloadedDisplay} / {totalDisplay}
         </div>
       </div>
       <div style={{
