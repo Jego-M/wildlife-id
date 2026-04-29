@@ -74,6 +74,10 @@ class DownloadModelRequest(BaseModel):
     model_id: str
 
 
+class CancelDownloadRequest(BaseModel):
+    model_id: str
+
+
 @app.post("/select_model")
 async def select_model(req: SelectModelRequest) -> dict:
     assert predictor is not None
@@ -87,10 +91,34 @@ async def select_model(req: SelectModelRequest) -> dict:
 @app.post("/download_model")
 async def download_model(req: DownloadModelRequest) -> StreamingResponse:
     assert predictor is not None
+    model_id = req.model_id
+
     def event_stream() -> Generator[str, None, None]:
-        for progress in predictor.download_model(req.model_id):
-            yield f"data: {json.dumps(progress)}\n\n"
+        assert predictor is not None
+        try:
+            for progress in predictor.download_model(model_id):
+                yield f"data: {json.dumps(progress)}\n\n"
+        except (ValueError, RuntimeError) as exc:
+            # Up-front validation errors (unknown model, already-downloading)
+            # surface as an error event so the renderer's progress listener
+            # can show them inline.
+            err = {
+                "model_id": model_id,
+                "bytes_downloaded": 0,
+                "bytes_total": 0,
+                "status": "error",
+                "error": str(exc),
+            }
+            yield f"data: {json.dumps(err)}\n\n"
+
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/cancel_download")
+async def cancel_download(req: CancelDownloadRequest) -> dict:
+    assert predictor is not None
+    predictor.cancel_download(req.model_id)
+    return {"status": "ok"}
 
 
 @app.post("/remove_model")

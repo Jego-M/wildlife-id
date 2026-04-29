@@ -56,6 +56,15 @@ MODEL_CONFIGS: dict[str, dict[str, Any]] = {
 META_SIZE_BYTES_ESTIMATE = 30_000_000
 
 
+class _DownloadCancelled(Exception):
+    """Raised internally by the download worker when the stop event fires.
+
+    Bubbles up through huggingface_hub's transfer code so snapshot_download
+    aborts mid-stream; the worker's outer except checks the stop event to
+    distinguish user-cancellation from a genuine failure.
+    """
+
+
 class Predictor:
     def __init__(
         self,
@@ -85,6 +94,12 @@ class Predictor:
         self._meta_store: MetaStore | None = None
         self._loaded_model_id: str | None = None
         self._load_lock = threading.Lock()
+
+        # Single-slot tracking for the in-flight model download. Holds
+        # {"model_id", "stop_event", "thread"} when a download is running,
+        # otherwise None. Guarded by _download_state_lock.
+        self._download_state: dict[str, Any] | None = None
+        self._download_state_lock = threading.Lock()
 
         self.active_model = self._resolve_initial_active_model()
         logger.info(
@@ -370,114 +385,200 @@ class Predictor:
         if model_id not in MODEL_CONFIGS:
             raise ValueError(f"Unknown model: {model_id}")
 
-        cfg = MODEL_CONFIGS[model_id]
-        model_path = self._model_path(model_id)
-        local_dir = str(model_path)
-        repo_id = cfg["hf_repo"]
-
-        embeddings_filename = cfg["embeddings_filename"]
-        embeddings_size = cfg["embeddings_size_bytes"]
-        embeddings_dest = model_path / "species_embeddings.npz"
-
-        meta_needed = not self.meta_path.exists()
-        meta_size = META_SIZE_BYTES_ESTIMATE if meta_needed else 0
-
-        # bioclip-2's HF repo ships both .bin and .safetensors of the same
-        # weights — skip the safetensors copy so we don't double the download.
-        ignore_patterns = ["*.safetensors"]
-
-        api = HfApi()
-        model_bytes = 0
-        for item in api.list_repo_tree(repo_id, repo_type="model", recursive=True):
-            if any(item.path.endswith(p.lstrip("*")) for p in ignore_patterns):
-                continue
-            if hasattr(item, "size") and item.size is not None:
-                model_bytes += item.size
-        if model_bytes == 0:
-            model_bytes = cfg["size_mb"] * 1_000_000
-
-        total_bytes = model_bytes + embeddings_size + meta_size
-
-        yield {
+        # Reserve the single in-flight download slot. A second concurrent call
+        # for the same or a different model is rejected — the renderer enforces
+        # this in the UI, but we keep it as defense-in-depth.
+        stop_event = threading.Event()
+        my_state: dict[str, Any] = {
             "model_id": model_id,
-            "bytes_downloaded": 0,
-            "bytes_total": total_bytes,
-            "status": "downloading",
+            "stop_event": stop_event,
+            "thread": None,
         }
-
-        progress_q: queue.Queue[dict[str, Any] | None] = queue.Queue()
-        last_reported = [0]
-        lock = threading.Lock()
-
-        def _emit(downloaded: int) -> None:
-            with lock:
-                if downloaded - last_reported[0] > max(total_bytes // 200, 1):
-                    last_reported[0] = downloaded
-                    progress_q.put({
-                        "model_id": model_id,
-                        "bytes_downloaded": downloaded,
-                        "bytes_total": total_bytes,
-                        "status": "downloading",
-                    })
-
-        model_cumulative = [0]
-
-        class _OverallProgress(hf_tqdm):
-            def update(self, n: int = 1) -> bool:
-                result = super().update(n)
-                if n > 0 and total_bytes > 0:
-                    with lock:
-                        model_cumulative[0] += n
-                    _emit(model_cumulative[0])
-                return result
-
-        def _do_download() -> None:
-            try:
-                snapshot_download(
-                    repo_id=repo_id,
-                    local_dir=local_dir,
-                    ignore_patterns=ignore_patterns,
-                    tqdm_class=_OverallProgress,
+        with self._download_state_lock:
+            if self._download_state is not None:
+                running = self._download_state["model_id"]
+                raise RuntimeError(
+                    f"A download is already in progress for {running}. "
+                    "Cancel it before starting another."
                 )
+            self._download_state = my_state
 
-                # Per-model embeddings
-                self._download_vocab_file(
-                    filename=embeddings_filename,
-                    dest=embeddings_dest,
-                    base_offset=model_bytes,
-                    emit=_emit,
-                )
+        thread: threading.Thread | None = None
+        try:
+            cfg = MODEL_CONFIGS[model_id]
+            model_path = self._model_path(model_id)
+            local_dir = str(model_path)
+            repo_id = cfg["hf_repo"]
 
-                # Shared metadata sqlite (skip if already on disk from previous model)
-                if meta_needed:
-                    self._download_vocab_file(
-                        filename=META_FILENAME,
-                        dest=self.meta_path,
-                        base_offset=model_bytes + embeddings_size,
-                        emit=_emit,
+            embeddings_filename = cfg["embeddings_filename"]
+            embeddings_size = cfg["embeddings_size_bytes"]
+            embeddings_dest = model_path / "species_embeddings.npz"
+
+            meta_needed = not self.meta_path.exists()
+            meta_size = META_SIZE_BYTES_ESTIMATE if meta_needed else 0
+
+            # bioclip-2's HF repo ships both .bin and .safetensors of the same
+            # weights — skip the safetensors copy so we don't double the download.
+            ignore_patterns = ["*.safetensors"]
+
+            api = HfApi()
+            model_bytes = 0
+            for item in api.list_repo_tree(repo_id, repo_type="model", recursive=True):
+                if any(item.path.endswith(p.lstrip("*")) for p in ignore_patterns):
+                    continue
+                if hasattr(item, "size") and item.size is not None:
+                    model_bytes += item.size
+            if model_bytes == 0:
+                model_bytes = cfg["size_mb"] * 1_000_000
+
+            total_bytes = model_bytes + embeddings_size + meta_size
+
+            yield {
+                "model_id": model_id,
+                "bytes_downloaded": 0,
+                "bytes_total": total_bytes,
+                "status": "downloading",
+            }
+
+            progress_q: queue.Queue[dict[str, Any] | None] = queue.Queue()
+            last_reported = [0]
+            progress_lock = threading.Lock()
+
+            def _emit(downloaded: int) -> None:
+                with progress_lock:
+                    if downloaded - last_reported[0] > max(total_bytes // 200, 1):
+                        last_reported[0] = downloaded
+                        progress_q.put({
+                            "model_id": model_id,
+                            "bytes_downloaded": downloaded,
+                            "bytes_total": total_bytes,
+                            "status": "downloading",
+                        })
+
+            model_cumulative = [0]
+
+            class _OverallProgress(hf_tqdm):
+                def update(self, n: int = 1) -> bool:
+                    # Bail out before doing any work so cancellation propagates
+                    # within one HF chunk write.
+                    if stop_event.is_set():
+                        raise _DownloadCancelled()
+                    result = super().update(n)
+                    if n > 0 and total_bytes > 0:
+                        with progress_lock:
+                            model_cumulative[0] += n
+                        _emit(model_cumulative[0])
+                    return result
+
+            def _do_download() -> None:
+                try:
+                    if stop_event.is_set():
+                        raise _DownloadCancelled()
+                    snapshot_download(
+                        repo_id=repo_id,
+                        local_dir=local_dir,
+                        ignore_patterns=ignore_patterns,
+                        tqdm_class=_OverallProgress,
                     )
 
-                progress_q.put(None)
-            except Exception as e:
-                logger.error("Download failed: %s", e)
-                progress_q.put({"model_id": model_id, "bytes_downloaded": 0, "bytes_total": 0, "status": "error", "error": str(e)})
-                progress_q.put(None)
+                    if stop_event.is_set():
+                        raise _DownloadCancelled()
+                    # Per-model embeddings
+                    self._download_vocab_file(
+                        filename=embeddings_filename,
+                        dest=embeddings_dest,
+                        base_offset=model_bytes,
+                        emit=_emit,
+                        stop_event=stop_event,
+                    )
 
-        thread = threading.Thread(target=_do_download, daemon=True)
-        thread.start()
+                    # Shared metadata sqlite (skip if already on disk from previous model)
+                    if meta_needed:
+                        if stop_event.is_set():
+                            raise _DownloadCancelled()
+                        self._download_vocab_file(
+                            filename=META_FILENAME,
+                            dest=self.meta_path,
+                            base_offset=model_bytes + embeddings_size,
+                            emit=_emit,
+                            stop_event=stop_event,
+                        )
 
-        while True:
-            event = progress_q.get(timeout=300)
-            if event is None:
-                break
-            if event.get("status") == "error":
+                    progress_q.put(None)
+                except _DownloadCancelled:
+                    logger.info("Download cancelled: %s", model_id)
+                    progress_q.put(None)
+                except Exception as e:
+                    # If the stop event fired, treat any exception as cancellation
+                    # (HF's transfer code may wrap our sentinel in a different type).
+                    if stop_event.is_set():
+                        logger.info("Download cancelled mid-transfer: %s (%s)", model_id, e)
+                        progress_q.put(None)
+                    else:
+                        logger.error("Download failed: %s", e)
+                        progress_q.put({
+                            "model_id": model_id,
+                            "bytes_downloaded": 0,
+                            "bytes_total": 0,
+                            "status": "error",
+                            "error": str(e),
+                        })
+                        progress_q.put(None)
+
+            thread = threading.Thread(target=_do_download, daemon=True)
+            my_state["thread"] = thread
+            thread.start()
+
+            while True:
+                event = progress_q.get(timeout=300)
+                if event is None:
+                    break
+                if event.get("status") == "error":
+                    yield event
+                    return
                 yield event
-                return
-            yield event
 
-        thread.join()
-        yield {"model_id": model_id, "bytes_downloaded": total_bytes, "bytes_total": total_bytes, "status": "verifying"}
-        yield {"model_id": model_id, "bytes_downloaded": total_bytes, "bytes_total": total_bytes, "status": "ready"}
+            # Skip the verifying/ready events on cancellation — the worker put
+            # None on the queue but the artifacts aren't actually complete.
+            if stop_event.is_set():
+                return
+
+            yield {
+                "model_id": model_id,
+                "bytes_downloaded": total_bytes,
+                "bytes_total": total_bytes,
+                "status": "verifying",
+            }
+            yield {
+                "model_id": model_id,
+                "bytes_downloaded": total_bytes,
+                "bytes_total": total_bytes,
+                "status": "ready",
+            }
+        finally:
+            # Triggered on normal completion, error, GeneratorExit (client
+            # disconnect), and explicit cancel. Setting the event here means
+            # closing the SSE stream alone is enough to stop the worker.
+            stop_event.set()
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=10)
+            with self._download_state_lock:
+                if self._download_state is my_state:
+                    self._download_state = None
+
+    def cancel_download(self, model_id: str) -> None:
+        """Signal the in-flight download for `model_id` to stop and wait briefly
+        for the worker thread to exit. No-op if nothing is running, or if a
+        different model is in flight.
+        """
+        with self._download_state_lock:
+            state = self._download_state
+            if state is None or state["model_id"] != model_id:
+                return
+            state["stop_event"].set()
+            thread = state.get("thread")
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=10)
 
     def _download_vocab_file(
         self,
@@ -485,11 +586,14 @@ class Predictor:
         dest: Path,
         base_offset: int,
         emit: Any,
+        stop_event: threading.Event | None = None,
     ) -> None:
         """Stream a file from the vocab HF dataset to `dest` with progress.
 
         `base_offset` is the cumulative byte count of preceding download stages,
-        so the emit callback can report a single monotonic total.
+        so the emit callback can report a single monotonic total. If
+        `stop_event` is provided and fires, the chunk loop bails out and the
+        partial `.tmp` file is deleted.
         """
         if dest.exists():
             return
@@ -501,13 +605,25 @@ class Predictor:
         received = 0
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
-        with _req.get(url, stream=True, timeout=600) as r:
-            r.raise_for_status()
-            with open(tmp, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1 << 20):
-                    if chunk:
-                        f.write(chunk)
-                        received += len(chunk)
-                        emit(base_offset + received)
-        tmp.rename(dest)
-        logger.info("Saved %s (%.1f MB)", dest, dest.stat().st_size / 1e6)
+        try:
+            with _req.get(url, stream=True, timeout=600) as r:
+                r.raise_for_status()
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1 << 20):
+                        if stop_event is not None and stop_event.is_set():
+                            raise _DownloadCancelled()
+                        if chunk:
+                            f.write(chunk)
+                            received += len(chunk)
+                            emit(base_offset + received)
+            tmp.rename(dest)
+            logger.info("Saved %s (%.1f MB)", dest, dest.stat().st_size / 1e6)
+        except BaseException:
+            # Anything that interrupts the transfer (cancel, network error,
+            # GeneratorExit) leaves a partial .tmp behind — clean it up so a
+            # retry doesn't see stale junk.
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise

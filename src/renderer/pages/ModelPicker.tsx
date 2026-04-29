@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, CSSProperties } from "react";
+import { useState, useEffect, useRef, useCallback, CSSProperties } from "react";
 import { Wordmark, Spinner, StepDots, PrimaryButton, GhostButton } from "../components/ui";
 import type { ModelDownloadProgress, ModelId, ModelsResponse } from "../../shared/types";
 
@@ -14,18 +14,25 @@ export default function ModelPicker({
 }: { onBack: () => void; onComplete: () => void }) {
   const [selected, setSelected] = useState<"fast" | "accurate">("fast");
   const [downloading, setDownloading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelsData, setModelsData] = useState<ModelsResponse | null>(null);
+
+  // Each download attempt gets a fresh id; stale progress events from a
+  // previous (cancelled) attempt are ignored even if they slip through.
+  const attemptId = useRef(0);
 
   useEffect(() => {
     window.api.models.list().then(setModelsData).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!downloading) return;
+    if (!downloading || cancelling) return;
+    const myAttempt = attemptId.current;
     const unsubscribe = window.api.models.onDownloadProgress((p) => {
+      if (myAttempt !== attemptId.current) return;
       if (p.model_id !== MODEL_MAP[selected]) return;
       setProgress(p);
       if (p.status === "ready") {
@@ -41,9 +48,10 @@ export default function ModelPicker({
       }
     });
     return unsubscribe;
-  }, [downloading, selected]);
+  }, [downloading, cancelling, selected]);
 
   const startDownload = useCallback(async () => {
+    attemptId.current += 1;
     setProgress(null);
     setDone(false);
     setError(null);
@@ -56,7 +64,21 @@ export default function ModelPicker({
     }
   }, [selected]);
 
-  const reset = () => { setDownloading(false); setProgress(null); setDone(false); setError(null); };
+  const reset = useCallback(async () => {
+    setCancelling(true);
+    try {
+      await window.api.models.cancel();
+    } catch {
+      // best-effort — even if the backend cancel call fails, we still want
+      // to reset the UI so the user can try again.
+    }
+    attemptId.current += 1;
+    setDownloading(false);
+    setProgress(null);
+    setDone(false);
+    setError(null);
+    setCancelling(false);
+  }, []);
 
   const progressPct = progress && progress.bytes_total > 0
     ? Math.min(1, progress.bytes_downloaded / progress.bytes_total)
@@ -121,9 +143,10 @@ export default function ModelPicker({
           ]}
           totalBytes={bytesFor("bioclip-v1")}
           selected={selected === "fast"}
-          disabled={downloading}
+          disabled={downloading || cancelling}
           onSelect={() => setSelected("fast")}
           downloading={downloading && selected === "fast"}
+          cancelling={cancelling && selected === "fast"}
           progressPct={progressPct}
           progress={progress}
           done={done}
@@ -139,9 +162,10 @@ export default function ModelPicker({
           ]}
           totalBytes={bytesFor("bioclip-v2")}
           selected={selected === "accurate"}
-          disabled={downloading}
+          disabled={downloading || cancelling}
           onSelect={() => setSelected("accurate")}
           downloading={downloading && selected === "accurate"}
+          cancelling={cancelling && selected === "accurate"}
           progressPct={progressPct}
           progress={progress}
           done={done}
@@ -175,7 +199,9 @@ export default function ModelPicker({
             </span>
           )}
           {(downloading && !done) && (
-            <GhostButton onClick={reset} style={{ height: 40 }}>Cancel</GhostButton>
+            <GhostButton onClick={cancelling ? undefined : reset} style={{ height: 40 }}>
+              {cancelling ? "Cancelling…" : "Cancel"}
+            </GhostButton>
           )}
           {error && !downloading && (
             <PrimaryButton onClick={startDownload} style={{ minWidth: 200, justifyContent: "center" }}>
@@ -185,13 +211,14 @@ export default function ModelPicker({
           {!error && (
             <PrimaryButton
               onClick={done ? onComplete : startDownload}
-              disabled={downloading && !done}
+              disabled={(downloading && !done) || cancelling}
               style={{ minWidth: 200, justifyContent: "center" }}
             >
               {done ? "Open Wildlife ID"
+                : cancelling ? "Cancelling…"
                 : downloading ? `Downloading… ${Math.round(progressPct * 100)}%`
                 : "Download and continue"}
-              {!downloading && !done && (
+              {!downloading && !done && !cancelling && (
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" strokeWidth="1.5"
                     strokeLinecap="round" strokeLinejoin="round" />
@@ -209,13 +236,14 @@ interface StatItem { label: string; value: string; sub: string; }
 interface ModelCardProps {
   id: string; name: string; subtitle: string; stats: StatItem[];
   selected: boolean; recommended?: boolean; disabled: boolean;
-  onSelect: () => void; downloading: boolean; progressPct: number;
+  onSelect: () => void; downloading: boolean; cancelling: boolean;
+  progressPct: number;
   progress: ModelDownloadProgress | null; done: boolean; totalBytes: number;
 }
 
 function ModelCard({
   id, name, subtitle, stats, selected, recommended, onSelect, disabled,
-  downloading, progressPct, progress, done, totalBytes,
+  downloading, cancelling, progressPct, progress, done, totalBytes,
 }: ModelCardProps) {
   const dim = disabled && !selected;
   return (
@@ -284,7 +312,7 @@ function ModelCard({
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
         {downloading ? (
-          <DownloadStatus progressPct={progressPct} progress={progress} done={done} totalBytes={totalBytes} />
+          <DownloadStatus progressPct={progressPct} progress={progress} done={done} cancelling={cancelling} totalBytes={totalBytes} />
         ) : (
           <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)", margin: 0 }}>
             {id === "fast"
@@ -317,8 +345,8 @@ function SelectionMark({ selected }: { selected: boolean }) {
 }
 
 function DownloadStatus({
-  progressPct, progress, done, totalBytes,
-}: { progressPct: number; progress: ModelDownloadProgress | null; done: boolean; totalBytes: number }) {
+  progressPct, progress, done, cancelling, totalBytes,
+}: { progressPct: number; progress: ModelDownloadProgress | null; done: boolean; cancelling: boolean; totalBytes: number }) {
   const pct = Math.round(progressPct * 100);
   const downloadedBytes = progress?.bytes_downloaded ?? 0;
   const actualTotal = progress && progress.bytes_total > 0 ? progress.bytes_total : totalBytes;
@@ -336,6 +364,7 @@ function DownloadStatus({
         }}>
           {!done && <Spinner />}
           {done ? "Download complete"
+            : cancelling ? "Cancelling…"
             : progress?.status === "verifying" ? "Verifying model…"
             : "Downloading model…"}
         </div>

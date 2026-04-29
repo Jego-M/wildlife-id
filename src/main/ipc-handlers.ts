@@ -13,6 +13,10 @@ function backendError(channel: string, err: unknown): never {
   throw new Error("Could not reach the model backend.");
 }
 
+// Tracks the single in-flight model download so models:cancel can abort it
+// and a second models:download invocation can refuse rather than racing.
+let currentDownload: { modelId: string; abortController: AbortController } | null = null;
+
 function dbError(channel: string, err: unknown): never {
   log.error(`${channel} failed`, err);
   throw new Error("A database error occurred.");
@@ -64,11 +68,20 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("models:download", async (_, modelId: string) => {
+    if (currentDownload) {
+      throw new Error("A download is already in progress.");
+    }
+
+    const ac = new AbortController();
+    const ourSlot = { modelId, abortController: ac };
+    currentDownload = ourSlot;
+
     try {
       const res = await fetch(`${getBackendUrl()}/download_model`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model_id: modelId }),
+        signal: ac.signal,
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -97,7 +110,37 @@ export function registerIpcHandlers(): void {
         }
       }
     } catch (err) {
+      if (ac.signal.aborted) {
+        log.info(`models:download aborted by user (model=${modelId})`);
+        return;
+      }
       backendError("models:download", err);
+    } finally {
+      // Only clear if this invocation still owns the slot — a quick
+      // cancel-then-restart could have replaced it with a new AbortController.
+      if (currentDownload === ourSlot) {
+        currentDownload = null;
+      }
+    }
+  });
+
+  ipcMain.handle("models:cancel", async () => {
+    const inFlight = currentDownload;
+    if (!inFlight) return;
+    inFlight.abortController.abort();
+    currentDownload = null;
+    // Belt-and-suspenders: explicitly tell the backend to stop its worker
+    // thread. Aborting the fetch alone closes the SSE stream which triggers
+    // the generator's finally, but this makes the cancel synchronous from
+    // the renderer's perspective so the next download can start cleanly.
+    try {
+      await fetch(`${getBackendUrl()}/cancel_download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: inFlight.modelId }),
+      });
+    } catch (err) {
+      log.warn("models:cancel — backend cancel call failed (likely benign)", err);
     }
   });
 

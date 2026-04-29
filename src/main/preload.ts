@@ -22,6 +22,9 @@ const api = {
     download: (id: ModelId): Promise<void> =>
       ipcRenderer.invoke("models:download", id),
 
+    cancel: (): Promise<void> =>
+      ipcRenderer.invoke("models:cancel"),
+
     remove: (id: ModelId): Promise<void> =>
       ipcRenderer.invoke("models:remove", id),
 

@@ -114,6 +114,7 @@ export interface WildlifeApi {
     list: () => Promise<ModelsResponse>;
     select: (id: ModelId) => Promise<void>;
     download: (id: ModelId) => Promise<void>;
+    cancel: () => Promise<void>;
     remove: (id: ModelId) => Promise<void>;
     onDownloadProgress: (cb: (p: ModelDownloadProgress) => void) => () => void;
   };
