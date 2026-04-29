@@ -9,7 +9,11 @@ export interface ModelArtifactStatus {
 export interface ModelInfo {
   id: ModelId;
   name: string;
-  size_mb: number;
+  /** Total on-disk footprint when fully downloaded (weights + embeddings + meta). */
+  size_bytes: number;
+  weights_size_bytes: number;
+  embeddings_size_bytes: number;
+  meta_size_bytes: number;
   /** Strict: true only when all three artifacts are present and the model is loadable. */
   downloaded: boolean;
   /** Per-artifact presence — lets the UI show "Resume download" for partial state. */

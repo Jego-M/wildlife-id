@@ -39,7 +39,7 @@ export function registerIpcHandlers(): void {
         body: JSON.stringify({ model_id: modelId }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail || `HTTP ${res.status}`);
       }
     } catch (err) {
@@ -55,7 +55,7 @@ export function registerIpcHandlers(): void {
         body: JSON.stringify({ model_id: modelId }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail || `HTTP ${res.status}`);
       }
     } catch (err) {

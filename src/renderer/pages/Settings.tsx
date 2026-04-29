@@ -1,7 +1,14 @@
-import { useState, useEffect, CSSProperties } from "react";
+import { useState, useEffect, useCallback, CSSProperties } from "react";
 import { AppGlyph, Spinner } from "../components/ui";
 import { getSetting, setSetting } from "../lib/settings";
-import type { StorageInfo } from "../../shared/types";
+import type { StorageInfo, ModelId, ModelsResponse, ModelDownloadProgress } from "../../shared/types";
+
+// Models advertise their size in 1000-based units (HF download sizes), so use
+// SI MB/GB rather than the 1024-based fmtBytes helper used for disk usage.
+function fmtModelSize(bytes: number): string {
+  if (bytes < 1_000_000_000) return `${Math.round(bytes / 1_000_000)} MB`;
+  return `${(Math.round(bytes / 100_000_000) / 10).toFixed(1)} GB`;
+}
 
 // ── Section type & nav ────────────────────────────────────────────────────────
 
@@ -68,9 +75,78 @@ export default function Settings() {
 
 // ── Models section ────────────────────────────────────────────────────────────
 
+type RowAction = "switching" | "removing" | "downloading";
+
 function ModelsSection() {
-  const active: string = "fast";
-  const installed: string[] = ["fast"];
+  const [data, setData] = useState<ModelsResponse | null>(null);
+  const [busy, setBusy] = useState<ModelId | null>(null);
+  const [action, setAction] = useState<RowAction | null>(null);
+  const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setData(await window.api.models.list());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load models.");
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // Subscribe to download progress only while a download is in flight.
+  useEffect(() => {
+    if (action !== "downloading") return;
+    const unsubscribe = window.api.models.onDownloadProgress((p) => {
+      if (p.model_id !== busy) return;
+      setProgress(p);
+      if (p.status === "error") {
+        setError(p.error ?? "Download failed.");
+      }
+    });
+    return unsubscribe;
+  }, [action, busy]);
+
+  const run = useCallback(
+    async (id: ModelId, kind: RowAction, op: () => Promise<void>, fallbackMsg: string) => {
+      setError(null); setBusy(id); setAction(kind);
+      if (kind === "downloading") setProgress(null);
+      try {
+        await op();
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : fallbackMsg);
+      } finally {
+        setBusy(null); setAction(null);
+        if (kind === "downloading") setProgress(null);
+      }
+    },
+    [refresh],
+  );
+
+  const handleSwitch = (id: ModelId) =>
+    run(id, "switching", () => window.api.models.select(id), "Could not switch model.");
+
+  const handleDownload = (id: ModelId) =>
+    run(id, "downloading", () => window.api.models.download(id), "Could not download model.");
+
+  const handleRemove = (id: ModelId) => {
+    if (!window.confirm("Remove this model? Its files will be deleted from disk.")) return;
+    return run(id, "removing", () => window.api.models.remove(id), "Could not remove model.");
+  };
+
+  // While loading, fall back to the original hardcoded defaults so the layout
+  // doesn't flicker. Once the list arrives we show real active/installed state.
+  const activeUi: "fast" | "accurate" = data?.active === "bioclip-v2" ? "accurate" : "fast";
+  const infoFor = (id: ModelId) => data?.available.find(m => m.id === id);
+  const isInstalled = (id: ModelId): boolean =>
+    data ? (infoFor(id)?.downloaded ?? false) : id === "bioclip-v1";
+  const sizeFor = (id: ModelId, fallback: string): string => {
+    const info = infoFor(id);
+    return info ? fmtModelSize(info.size_bytes) : fallback;
+  };
+
+  const activeModelId: ModelId = activeUi === "accurate" ? "bioclip-v2" : "bioclip-v1";
 
   return (
     <div style={{ padding: "28px 36px 36px", maxWidth: 720 }}>
@@ -79,7 +155,9 @@ function ModelsSection() {
         subtitle="Choose which on-device model identifies your photos. You can keep both installed and switch at any time."
       />
 
-      <CurrentModelCard active={active} />
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+
+      <CurrentModelCard active={activeUi} size={sizeFor(activeModelId, "—")} />
 
       <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 14 }}>
         <ModelRow
@@ -89,12 +167,18 @@ function ModelsSection() {
           description="A compact, distilled model tuned for everyday use. Handles common birds, mammals, reptiles, and insects with high confidence."
           stats={[
             { k: "Speed", v: "1–2 sec / image" },
-            { k: "Size", v: "604 MB" },
+            { k: "Size", v: sizeFor("bioclip-v1", "604 MB") },
             { k: "Hardware", v: "Any modern computer" },
             { k: "Version", v: "v3.2 · Mar 2026" },
           ]}
-          active={active === "fast"}
-          installed={installed.includes("fast")}
+          active={activeUi === "fast"}
+          installed={isInstalled("bioclip-v1")}
+          action={busy === "bioclip-v1" ? action : null}
+          progress={busy === "bioclip-v1" ? progress : null}
+          disabled={busy !== null}
+          onSwitch={() => handleSwitch("bioclip-v1")}
+          onDownload={() => handleDownload("bioclip-v1")}
+          onRemove={() => handleRemove("bioclip-v1")}
         />
         <ModelRow
           id="accurate"
@@ -103,12 +187,18 @@ function ModelsSection() {
           description="A larger model with finer-grained recognition — better at subspecies, juveniles, and uncommon visitors. Needs more memory."
           stats={[
             { k: "Speed", v: "3–6 sec / image" },
-            { k: "Size", v: "1.74 GB" },
+            { k: "Size", v: sizeFor("bioclip-v2", "1.74 GB") },
             { k: "Hardware", v: "16 GB+ RAM recommended" },
             { k: "Version", v: "v3.2 · Mar 2026" },
           ]}
-          active={active === "accurate"}
-          installed={installed.includes("accurate")}
+          active={activeUi === "accurate"}
+          installed={isInstalled("bioclip-v2")}
+          action={busy === "bioclip-v2" ? action : null}
+          progress={busy === "bioclip-v2" ? progress : null}
+          disabled={busy !== null}
+          onSwitch={() => handleSwitch("bioclip-v2")}
+          onDownload={() => handleDownload("bioclip-v2")}
+          onRemove={() => handleRemove("bioclip-v2")}
         />
       </div>
 
@@ -143,10 +233,10 @@ function ModelsSection() {
   );
 }
 
-function CurrentModelCard({ active }: { active: string }) {
+function CurrentModelCard({ active, size }: { active: string; size: string }) {
   const meta = active === "fast"
-    ? { name: "Fast", sub: "604 MB · v3.2", detail: "~1.4 sec per image · 11,420 species" }
-    : { name: "Accurate", sub: "1.74 GB · v3.2", detail: "~4.1 sec per image · 11,420 species" };
+    ? { name: "Fast", sub: `${size} · v3.2`, detail: "~1.4 sec per image · 11,420 species" }
+    : { name: "Accurate", sub: `${size} · v3.2`, detail: "~4.1 sec per image · 11,420 species" };
 
   return (
     <div style={{
@@ -201,9 +291,28 @@ interface ModelRowProps {
   stats: { k: string; v: string }[];
   active: boolean;
   installed: boolean;
+  action: RowAction | null;
+  progress: ModelDownloadProgress | null;
+  disabled?: boolean;
+  onSwitch?: () => void;
+  onDownload?: () => void;
+  onRemove?: () => void;
 }
 
-function ModelRow({ name, tagline, description, stats, active, installed }: ModelRowProps) {
+function ModelRow({
+  name, tagline, description, stats, active, installed,
+  action, progress, disabled, onSwitch, onDownload, onRemove,
+}: ModelRowProps) {
+  const downloading = action === "downloading";
+  const switching = action === "switching";
+  const removing = action === "removing";
+  const progressPct = progress && progress.bytes_total > 0
+    ? Math.min(100, Math.round((progress.bytes_downloaded / progress.bytes_total) * 100))
+    : 0;
+  const progressLabel =
+    progress?.status === "verifying" ? "Verifying…" :
+    progress?.status === "ready"     ? "Finishing…" :
+    `Downloading… ${progressPct}%`;
   return (
     <div style={{
       padding: "18px 20px", borderRadius: 12,
@@ -252,13 +361,33 @@ function ModelRow({ name, tagline, description, stats, active, installed }: Mode
               </svg>
               In use
             </span>
+          ) : downloading ? (
+            <span style={{
+              fontSize: 12, color: "var(--ink-2)", fontWeight: 500,
+              display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px",
+            }}>
+              <Spinner />
+              {progressLabel}
+            </span>
           ) : installed ? (
             <>
-              <button style={{ ...GHOST_BTN, color: "var(--ink-3)" }}>Remove</button>
-              <button style={PRIMARY_BTN}>Switch to {name}</button>
+              <button
+                style={{ ...GHOST_BTN, color: "var(--ink-3)" }}
+                onClick={onRemove}
+                disabled={disabled}
+              >
+                {removing ? "Removing…" : "Remove"}
+              </button>
+              <button
+                style={PRIMARY_BTN}
+                onClick={onSwitch}
+                disabled={disabled}
+              >
+                {switching ? "Switching…" : `Switch to ${name}`}
+              </button>
             </>
           ) : (
-            <button style={PRIMARY_BTN}>
+            <button style={PRIMARY_BTN} onClick={onDownload} disabled={disabled}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M6 2v6M3 5l3 3 3-3M2 10h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -284,10 +413,54 @@ function ModelRow({ name, tagline, description, stats, active, installed }: Mode
         ))}
       </div>
 
-      {/* description */}
-      <div style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)" }}>
-        {description}
-      </div>
+      {/* description (or download progress) */}
+      {downloading ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{
+            height: 6, borderRadius: 999, background: "var(--accent-softer)",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              width: `${progressPct}%`, height: "100%",
+              background: "linear-gradient(90deg, var(--accent-deep), var(--accent))",
+              borderRadius: 999, transition: "width 120ms linear",
+            }} />
+          </div>
+          <div style={{
+            display: "flex", justifyContent: "space-between", marginTop: 6,
+            fontSize: 11, color: "var(--ink-4)",
+            fontFamily: "JetBrains Mono, monospace", fontVariantNumeric: "tabular-nums",
+          }}>
+            <span>
+              {progress ? fmtModelSize(progress.bytes_downloaded) : "0 MB"}
+              {" / "}
+              {progress ? fmtModelSize(progress.bytes_total) : "—"}
+            </span>
+            <span>{progressPct}%</span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)" }}>
+          {description}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div style={{
+      marginBottom: 16, padding: "10px 14px", borderRadius: 8,
+      background: "#fde8e6", border: "0.5px solid #e8b6b0", color: "#8b2a1f",
+      fontSize: 12.5, display: "flex", alignItems: "center",
+      justifyContent: "space-between", gap: 12,
+    }}>
+      <span>{message}</span>
+      <button onClick={onDismiss} aria-label="Dismiss" style={{
+        appearance: "none", border: 0, background: "transparent", cursor: "pointer",
+        color: "#8b2a1f", fontSize: 18, padding: 0, lineHeight: 1,
+      }}>×</button>
     </div>
   );
 }
