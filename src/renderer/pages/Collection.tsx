@@ -218,10 +218,6 @@ function GridCard({ item, onClick }: { item: Sighting; onClick: () => void }) {
           draggable={false}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
         />
-        <div style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(20,28,22,0.78)", color: "#fff", fontSize: 11, fontWeight: 500, padding: "4px 9px", borderRadius: 999, display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 4px var(--accent)" }} />
-          {Math.round(item.confidence * 100)}%
-        </div>
       </div>
       <div style={{ padding: "12px 14px 14px" }}>
         <div style={{ fontFamily: "Fraunces, serif", fontWeight: 500, fontSize: 16, color: "var(--ink)", letterSpacing: "-0.005em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
@@ -238,8 +234,8 @@ function GridCard({ item, onClick }: { item: Sighting; onClick: () => void }) {
 function ListView({ items, onOpen }: { items: Sighting[]; onOpen: (i: Sighting) => void }) {
   return (
     <div style={{ padding: "8px 32px 32px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 90px 32px", gap: 14, alignItems: "center", padding: "10px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", borderBottom: "0.5px solid var(--hair)" }}>
-        <span /><span>Species</span><span>Location</span><span>Date</span><span style={{ textAlign: "right" }}>Confidence</span><span />
+      <div style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 32px", gap: 14, alignItems: "center", padding: "10px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", borderBottom: "0.5px solid var(--hair)" }}>
+        <span /><span>Species</span><span>Location</span><span>Date</span><span />
       </div>
       {items.map(it => {
         const displayName = it.common_name ?? it.scientific_name;
@@ -247,7 +243,7 @@ function ListView({ items, onOpen }: { items: Sighting[]; onOpen: (i: Sighting) 
           <div key={it.id} onClick={() => onOpen(it)}
             onMouseEnter={e => (e.currentTarget.style.background = "var(--accent-softer)")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-            style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 90px 32px", gap: 14, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", transition: "background 120ms ease", borderBottom: "0.5px solid var(--hair)" }}>
+            style={{ display: "grid", gridTemplateColumns: "56px 1.6fr 1fr 1fr 32px", gap: 14, alignItems: "center", padding: "10px 12px", borderRadius: 8, cursor: "pointer", transition: "background 120ms ease", borderBottom: "0.5px solid var(--hair)" }}>
             <div style={{ width: 48, height: 36, borderRadius: 5, overflow: "hidden", background: "#e8e4db" }}>
               <img src={`local-image://${it.image_path}`} alt="" draggable={false}
                 style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -258,12 +254,6 @@ function ListView({ items, onOpen }: { items: Sighting[]; onOpen: (i: Sighting) 
             </div>
             <span style={{ fontSize: 12.5, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.location ?? "—"}</span>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11.5, color: "var(--ink-3)" }}>{formatDate(it.date_observed ?? it.created_at)}</span>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-              <div style={{ width: 50, height: 4, background: "var(--accent-softer)", borderRadius: 999, overflow: "hidden" }}>
-                <div style={{ width: `${it.confidence * 100}%`, height: "100%", background: "var(--accent)" }} />
-              </div>
-              <span style={{ fontSize: 11.5, color: "var(--ink-2)", fontWeight: 500, minWidth: 28 }}>{Math.round(it.confidence * 100)}%</span>
-            </div>
             <span style={{ color: "var(--ink-4)", textAlign: "right" }}>
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
@@ -353,6 +343,12 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
             </div>
           </div>
 
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>
+              Model used
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{item.model_used === "bioclip-v1" ? "BioCLIP v1 (Fast)" : "BioCLIP 2 (Accurate)"}</div>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginBottom: 22 }}>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>Date observed</div>
@@ -374,13 +370,6 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
                 style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
               />
             </div>
-          </div>
-
-          <div style={{ marginBottom: 22 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: "var(--ink-4)", marginBottom: 4 }}>
-              Model used
-            </div>
-            <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{item.model_used === "bioclip-v1" ? "BioCLIP v1 (Fast)" : "BioCLIP 2 (Accurate)"}</div>
           </div>
 
           <div style={{ marginBottom: 22 }}>

@@ -18,9 +18,9 @@ export default function AppShell() {
         background: "#fff",
         borderLeft: "0.5px solid var(--hair)",
       }}>
-        {tab === "identify"   && <Identify />}
-        {tab === "collection" && <Collection />}
-        {tab === "settings"   && <Settings />}
+        <div style={{ display: tab === "identify" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}><Identify /></div>
+        <div style={{ display: tab === "collection" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}><Collection /></div>
+        <div style={{ display: tab === "settings" ? "flex" : "none", flex: 1, flexDirection: "column", minHeight: 0 }}><Settings /></div>
       </div>
     </div>
   );

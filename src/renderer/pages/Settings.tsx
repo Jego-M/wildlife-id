@@ -227,7 +227,6 @@ function ModelsSection() {
             No images, results, or metadata are ever sent to a server.
           </div>
         </div>
-        <button style={GHOST_BTN}>Check for updates</button>
       </div>
     </div>
   );
