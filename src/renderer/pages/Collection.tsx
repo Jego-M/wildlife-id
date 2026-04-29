@@ -298,6 +298,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
   fieldsRef.current = fields;
 
   const dirtyKeys = useRef<Set<string>>(new Set());
+  const closing = useRef(false);
 
   const markDirty = (key: string) => { dirtyKeys.current.add(key); };
 
@@ -309,12 +310,12 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
       const value = fieldsRef.current[key as keyof typeof fields] || null;
       try {
         await window.api.sightings.update(item.id, { [key]: value });
-      } catch { /* best-effort on close */ }
+      } catch { /* best-effort */ }
     }
-    onUpdated();
   };
 
   const handleClose = async () => {
+    closing.current = true;
     await saveDirty();
     onClose();
   };
@@ -405,7 +406,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
               <input
                 value={fields.date_observed}
                 onChange={e => { setFields(f => ({ ...f, date_observed: e.target.value })); markDirty("date_observed"); }}
-                onBlur={() => saveDirty()}
+                onBlur={() => { if (!closing.current) saveDirty(); }}
                 placeholder="e.g. Apr 21, 2026"
                 style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
               />
@@ -415,7 +416,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
               <input
                 value={fields.location}
                 onChange={e => { setFields(f => ({ ...f, location: e.target.value })); markDirty("location"); }}
-                onBlur={() => saveDirty()}
+                onBlur={() => { if (!closing.current) saveDirty(); }}
                 placeholder="e.g. Tilden Park"
                 style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 6, background: "#fff", padding: "7px 10px", fontFamily: "inherit", fontSize: 13, color: "var(--ink)", outline: "none" }}
               />
@@ -427,7 +428,7 @@ function DetailDrawer({ item, onClose, onDelete, onUpdated }: {
             <textarea
               value={fields.comments}
               onChange={e => { setFields(f => ({ ...f, comments: e.target.value })); markDirty("comments"); }}
-              onBlur={() => saveDirty()}
+              onBlur={() => { if (!closing.current) saveDirty(); }}
               placeholder="Add observations from this sighting…"
               style={{ width: "100%", appearance: "none", border: "0.5px solid var(--hair-2)", borderRadius: 8, background: "#fbfaf6", padding: "12px 14px", fontFamily: "inherit", fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55, minHeight: 80, resize: "vertical", outline: "none" }}
             />

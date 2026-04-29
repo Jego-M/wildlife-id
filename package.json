@@ -1,6 +1,6 @@
 {
   "name": "wildlife-id",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Offline desktop app for animal species identification using BioCLIP",
   "main": "dist/main/index.js",
   "author": "Jego-M",

@@ -811,7 +811,7 @@ function ResultPanel({ predictions, modelUsed, onAnother, onSave }: {
       )}
 
       <div style={{ flex: 1 }} />
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, paddingBottom: 16 }}>
         <button onClick={async () => {
           if (saved || saving) return;
           setSaving(true);

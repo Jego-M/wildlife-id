@@ -169,7 +169,7 @@ function ModelsSection() {
             { k: "Speed", v: "1–2 sec / image" },
             { k: "Size", v: sizeFor("bioclip-v1", "604 MB") },
             { k: "Hardware", v: "Any modern computer" },
-            { k: "Version", v: "v3.2 · Mar 2026" },
+            { k: "Version", v: "BioCLIP 1" },
           ]}
           active={activeUi === "fast"}
           installed={isInstalled("bioclip-v1")}
@@ -184,12 +184,12 @@ function ModelsSection() {
           id="accurate"
           name="Accurate"
           tagline="Slightly more accurate, a bit slower"
-          description="A larger model with finer-grained recognition — better at subspecies, juveniles, and uncommon visitors. Needs more memory."
+          description="A larger model with finer-grained recognition. Better at subspecies, juveniles, and uncommon visitors. Needs more memory."
           stats={[
             { k: "Speed", v: "3–6 sec / image" },
             { k: "Size", v: sizeFor("bioclip-v2", "1.74 GB") },
-            { k: "Hardware", v: "16 GB+ RAM recommended" },
-            { k: "Version", v: "v3.2 · Mar 2026" },
+            { k: "Hardware", v: "16 GB+ RAM" },
+            { k: "Version", v: "BioCLIP 2" },
           ]}
           active={activeUi === "accurate"}
           installed={isInstalled("bioclip-v2")}
@@ -234,8 +234,8 @@ function ModelsSection() {
 
 function CurrentModelCard({ active, size }: { active: string; size: string }) {
   const meta = active === "fast"
-    ? { name: "Fast", sub: `${size} · v3.2`, detail: "~1.4 sec per image · 11,420 species" }
-    : { name: "Accurate", sub: `${size} · v3.2`, detail: "~4.1 sec per image · 11,420 species" };
+    ? { name: "Fast", sub: `${size} · BioCLIP 1`, detail: "~1.5 sec per image · 450,000+ species" }
+    : { name: "Accurate", sub: `${size} · BioCLIP 2`, detail: "~4.5 sec per image · 450,000+ species" };
 
   return (
     <div style={{
@@ -491,7 +491,7 @@ function GeneralSection() {
       </SettingsRow>
       {sound && (
         <>
-          <SettingsRow label="Notification sound" hint="Pick the chime you prefer.">
+          <SettingsRow label="Notification sound" hint="Pick the sound you prefer.">
             <div style={{ display: "flex", gap: 6 }}>
               {SOUNDS.map(s => {
                 const active = soundId === s.id;
