@@ -413,59 +413,58 @@ ipcMain.handle("identify:predict", async (_, imageBytes) => {
 
 ## 8. Build & release pipeline
 
+See `CONTRIBUTING.md` for the full step-by-step walkthrough. Summary here.
+
 ### Local dev
 
 ```bash
 npm install
-cd src/backend && pip install -r requirements.txt && cd ../..
-npm run dev          # starts Vite for renderer, tsc --watch for main, and a dev Python server
+python3 -m venv .venv && .venv/bin/pip install -r src/backend/requirements.txt
+# install torch separately — see CONTRIBUTING.md for the right index URL
+npm run dev
 ```
 
-The dev Python server is run directly (not via PyInstaller), so iteration is fast.
+The dev backend runs directly from `.venv` (not PyInstaller), so Python changes are instant.
 
 ### Production build
 
+The backend must be built separately before `dist` — it is not included in `npm run build`.
+
 ```bash
-npm run build:backend    # PyInstaller --onedir, output to dist/backend/
-npm run build:renderer   # vite build, output to dist/renderer/
-npm run build:main       # tsc, output to dist/main/
-npm run dist             # electron-builder, packages everything
+npm run build:backend   # PyInstaller via .venv-build — output to dist/backend/
+npm run dist -- --linux # builds renderer + main, then packages with electron-builder
 ```
 
-`electron-builder.yml` skeleton:
+Platform flags: `--linux`, `--mac`, `--win`. Output lands in `dist/installers/`.
 
-```yaml
-appId: org.wildlifeid.app
-productName: Wildlife ID
-directories:
-  output: dist/installers
-files:
-  - dist/main/**
-  - dist/renderer/**
-  - package.json
-extraResources:
-  - from: dist/backend
-    to: backend
-    filter: ["**/*"]
-mac:
-  target: dmg
-  category: public.app-category.education
-  identity: null               # unsigned
-win:
-  target: nsis
-  signAndEditExecutable: false # unsigned
-linux:
-  target: AppImage
-  category: Education
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-```
+### PyInstaller spec
+
+The PyInstaller configuration lives in `build/wildlife_backend.spec` — a maintained file checked into the repo. **Do not delete it.** The auto-generated spec PyInstaller would produce has empty `hiddenimports` and `datas`, which breaks the build in several ways:
+
+- `open_clip` ships data files (BPE tokenizer vocab, model config JSONs) that PyInstaller's static analysis doesn't collect automatically → fixed with `collect_all("open_clip")`
+- `uvicorn` selects its HTTP/WebSocket protocol implementations at runtime via `importlib` → fixed with explicit `hiddenimports`
+- Local modules (`predictor`, `vocab`, `display`) need `pathex=[BACKEND_DIR]` to be found during analysis
+
+### Why builds use a separate `.venv-build` with CPU-only torch
+
+PyInstaller bundles whichever Python interpreter runs it, plus all packages visible to that interpreter. If the build venv has the **CUDA build of torch** (`torch+cuXXX`), two bad things happen:
+
+1. The bundle balloons by ~1.5 GB because `torch/lib/` ships CUDA binaries (`libtorch_cuda.so`, etc.) and pip pulls in `nvidia-*` packages totalling another ~2.7 GB.
+2. CUDA torch hard-links `libcudart.so.12` at import time. Even on a machine with no GPU, the bundled binary fails to start with `OSError: libcudart.so.12: cannot open shared object file` unless we also bundle the multi-GB `nvidia/` libs.
+
+The CPU-only torch wheel (`torch torchvision --index-url https://download.pytorch.org/whl/cpu`) is ~250 MB, has no `libcudart` dependency, and pulls in zero `nvidia-*` packages. So:
+
+- Devs keep CUDA torch in `.venv` for fast local inference.
+- `build/build_backend.sh` maintains a separate `.venv-build` with CPU-only torch and runs PyInstaller from there.
+- The first run of `build_backend.sh` creates `.venv-build` and installs CPU torch + `requirements.txt` + PyInstaller. Subsequent runs reuse it.
+
+Resulting installer sizes (Linux): AppImage ~370 MB, .deb ~250 MB. Backend bundle ~810 MB unpacked, of which ~630 MB is CPU torch — the floor for PyTorch inference.
+
+The runtime trade-off is no GPU acceleration in shipped binaries. On a modern CPU, BioCLIP v1 inference completes in ~1–2 s/image — well under the NFR-03 budget. Users who want GPU acceleration can run from source.
 
 ### Release CI
 
-`.github/workflows/release.yml` (skeleton — fill in versions and exact paths):
+`.github/workflows/release.yml` skeleton:
 
 ```yaml
 name: Release
@@ -485,18 +484,15 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with: { python-version: "3.12" }
       - run: npm ci
-      - run: pip install -r src/backend/requirements.txt pyinstaller
+      # build_backend.sh creates .venv-build with CPU-only torch on first run.
       - run: npm run build:backend
-      - run: npm run build:renderer
-      - run: npm run build:main
-      - run: npm run dist
+      - run: npm run dist -- --${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'mac' || 'win' }}
       - run: bash build/generate_third_party_licenses.sh
       - name: Compute checksums
-        run: |
-          cd dist/installers
-          sha256sum * > SHA256SUMS.txt
+        run: cd dist/installers && sha256sum * > SHA256SUMS.txt
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}
@@ -518,7 +514,7 @@ jobs:
           prerelease: ${{ contains(github.ref, '-') }}
 ```
 
-A separate `ci.yml` runs lint, typecheck, and tests on every PR but doesn't build installers — those only run on tags.
+A separate `ci.yml` runs lint, typecheck, and tests on every PR. Installer builds only run on tags.
 
 ---
 

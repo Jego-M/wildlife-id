@@ -10,7 +10,7 @@ files:
   - package.json
 
 extraResources:
-  - from: dist/backend
+  - from: dist/backend/wildlife_backend
     to: backend
     filter: ["**/*"]
 
@@ -24,7 +24,11 @@ win:
   signAndEditExecutable: false  # unsigned
 
 linux:
-  target: AppImage
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   category: Education
 
 nsis:

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, CSSProperties } from "react";
 import { AppGlyph, Spinner } from "../components/ui";
 import { getSetting, setSetting } from "../lib/settings";
+import { useActiveDownload } from "../lib/download-status";
 import type { StorageInfo, ModelId, ModelsResponse, ModelDownloadProgress } from "../../shared/types";
 
 // Models advertise their size in 1000-based units (HF download sizes), so use
@@ -81,8 +82,19 @@ function ModelsSection() {
   const [data, setData] = useState<ModelsResponse | null>(null);
   const [busy, setBusy] = useState<ModelId | null>(null);
   const [action, setAction] = useState<RowAction | null>(null);
-  const [progress, setProgress] = useState<ModelDownloadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Download progress is tracked globally so it survives navigating away
+  // from Settings while a download is still running.
+  const activeDownload = useActiveDownload();
+  const downloadStatus = activeDownload?.progress.status;
+  const downloadingId: ModelId | null =
+    activeDownload && (downloadStatus === "downloading" || downloadStatus === "verifying")
+      ? activeDownload.modelId
+      : null;
+  const effectiveBusy: ModelId | null = downloadingId ?? busy;
+  const effectiveAction: RowAction | null = downloadingId ? "downloading" : action;
+  const downloadProgress: ModelDownloadProgress | null = activeDownload?.progress ?? null;
 
   const refresh = useCallback(async () => {
     try {
@@ -94,23 +106,19 @@ function ModelsSection() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Subscribe to download progress only while a download is in flight.
+  // React to the download finishing in the global store: refresh the model
+  // list on success, surface the message on error.
   useEffect(() => {
-    if (action !== "downloading") return;
-    const unsubscribe = window.api.models.onDownloadProgress((p) => {
-      if (p.model_id !== busy) return;
-      setProgress(p);
-      if (p.status === "error") {
-        setError(p.error ?? "Download failed.");
-      }
-    });
-    return unsubscribe;
-  }, [action, busy]);
+    if (downloadStatus === "ready") {
+      refresh();
+    } else if (downloadStatus === "error") {
+      setError(activeDownload?.progress.error ?? "Download failed.");
+    }
+  }, [downloadStatus, refresh, activeDownload?.progress.error]);
 
   const run = useCallback(
     async (id: ModelId, kind: RowAction, op: () => Promise<void>, fallbackMsg: string) => {
       setError(null); setBusy(id); setAction(kind);
-      if (kind === "downloading") setProgress(null);
       try {
         await op();
         await refresh();
@@ -118,7 +126,6 @@ function ModelsSection() {
         setError(e instanceof Error ? e.message : fallbackMsg);
       } finally {
         setBusy(null); setAction(null);
-        if (kind === "downloading") setProgress(null);
       }
     },
     [refresh],
@@ -127,8 +134,15 @@ function ModelsSection() {
   const handleSwitch = (id: ModelId) =>
     run(id, "switching", () => window.api.models.select(id), "Could not switch model.");
 
-  const handleDownload = (id: ModelId) =>
-    run(id, "downloading", () => window.api.models.download(id), "Could not download model.");
+  // Fire-and-forget: the global useActiveDownload hook tracks progress,
+  // so we don't need to await this Promise to keep the UI in sync. If the
+  // user navigates away mid-download, the next mount picks up the state.
+  const handleDownload = (id: ModelId) => {
+    setError(null);
+    window.api.models.download(id).catch((e) => {
+      setError(e instanceof Error ? e.message : "Could not download model.");
+    });
+  };
 
   const handleRemove = (id: ModelId) => {
     if (!window.confirm("Remove this model? Its files will be deleted from disk.")) return;
@@ -173,9 +187,9 @@ function ModelsSection() {
           ]}
           active={activeUi === "fast"}
           installed={isInstalled("bioclip-v1")}
-          action={busy === "bioclip-v1" ? action : null}
-          progress={busy === "bioclip-v1" ? progress : null}
-          disabled={busy !== null}
+          action={effectiveBusy === "bioclip-v1" ? effectiveAction : null}
+          progress={effectiveBusy === "bioclip-v1" ? downloadProgress : null}
+          disabled={effectiveBusy !== null}
           onSwitch={() => handleSwitch("bioclip-v1")}
           onDownload={() => handleDownload("bioclip-v1")}
           onRemove={() => handleRemove("bioclip-v1")}
@@ -193,9 +207,9 @@ function ModelsSection() {
           ]}
           active={activeUi === "accurate"}
           installed={isInstalled("bioclip-v2")}
-          action={busy === "bioclip-v2" ? action : null}
-          progress={busy === "bioclip-v2" ? progress : null}
-          disabled={busy !== null}
+          action={effectiveBusy === "bioclip-v2" ? effectiveAction : null}
+          progress={effectiveBusy === "bioclip-v2" ? downloadProgress : null}
+          disabled={effectiveBusy !== null}
           onSwitch={() => handleSwitch("bioclip-v2")}
           onDownload={() => handleDownload("bioclip-v2")}
           onRemove={() => handleRemove("bioclip-v2")}

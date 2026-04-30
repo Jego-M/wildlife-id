@@ -1,9 +1,12 @@
 node_modules/
 dist/
 dist-electron/
+build/.pyinstaller_work/
+build/.pyinstaller_specs/
 
 # Python
 .venv/
+.venv-build/
 __pycache__/
 *.py[cod]
 *.pyo

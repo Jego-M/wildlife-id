@@ -17,19 +17,94 @@ function portFilePath(): string {
   return path.join(app.getPath("userData"), "backend.port");
 }
 
-function resolveBackendBinary(): string {
-  if (app.isPackaged) {
-    const ext = process.platform === "win32" ? ".exe" : "";
-    return path.join(process.resourcesPath, "backend", `wildlife_backend${ext}`);
-  }
-  // In dev, prefer the project venv if present
-  const venvPy = path.join(
+function resolveDevBinary(): string {
+  return path.join(
     app.getAppPath(),
     ".venv",
     "bin",
     process.platform === "win32" ? "python.exe" : "python"
   );
-  return venvPy;
+}
+
+function backendSourceDir(): string {
+  return path.join(process.resourcesPath, "backend");
+}
+
+function backendWorkDir(): string {
+  return path.join(app.getPath("userData"), "backend");
+}
+
+function isAppImage(): boolean {
+  return !!process.env.APPIMAGE;
+}
+
+/** Copy the bundled backend to a writable directory so we can execute it.
+ *  AppImage FUSE mounts don't support execve(), so we must copy out first. */
+async function ensureBackendExtracted(): Promise<string> {
+  const srcDir = backendSourceDir();
+  const workDir = backendWorkDir();
+  const binaryName =
+    process.platform === "win32" ? "wildlife_backend.exe" : "wildlife_backend";
+  const workBinary = path.join(workDir, binaryName);
+
+  log.info(`Backend source: ${srcDir}`);
+  log.info(`Backend work dir: ${workDir}`);
+  log.info(`Is AppImage: ${isAppImage()}`);
+
+  // Always re-extract for AppImage (source may have changed between versions)
+  if (isAppImage()) {
+    try {
+      await fs.rm(workDir, { recursive: true, force: true });
+      log.info("Removed previous backend extract");
+    } catch {
+      // first run, nothing to remove
+    }
+  } else {
+    // For .deb etc., skip copy if already present
+    try {
+      await fs.access(workBinary);
+      log.info(`Backend already extracted at ${workBinary}`);
+      return workBinary;
+    } catch {
+      // not yet copied
+    }
+  }
+
+  log.info(`Extracting backend from ${srcDir} to ${workDir}...`);
+  await fs.mkdir(workDir, { recursive: true });
+
+  try {
+    await copyDir(srcDir, workDir);
+  } catch (err) {
+    log.error(`Failed to copy backend: ${err}`);
+    throw err;
+  }
+
+  // Ensure executable on Unix
+  if (process.platform !== "win32") {
+    await fs.chmod(workBinary, 0o755);
+    log.info(`chmod +x ${workBinary}`);
+  }
+
+  // Verify the binary exists and is executable
+  await fs.access(workBinary);
+  log.info(`Backend extracted successfully: ${workBinary}`);
+
+  return workBinary;
+}
+
+async function copyDir(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
 }
 
 function resolveBackendArgs(): string[] {
@@ -37,7 +112,11 @@ function resolveBackendArgs(): string[] {
   if (app.isPackaged) {
     return ["--port-file", portFile];
   }
-  return [path.join(app.getAppPath(), "src", "backend", "main.py"), "--port-file", portFile];
+  return [
+    path.join(app.getAppPath(), "src", "backend", "main.py"),
+    "--port-file",
+    portFile,
+  ];
 }
 
 async function waitForPortFile(timeoutMs: number): Promise<number> {
@@ -87,7 +166,13 @@ function handleBackendExit(code: number | null, signal: string | null): void {
 export async function startBackend(): Promise<number> {
   await fs.rm(portFilePath(), { force: true });
 
-  const binary = resolveBackendBinary();
+  let binary: string;
+  if (!app.isPackaged) {
+    binary = resolveDevBinary();
+  } else {
+    binary = await ensureBackendExtracted();
+  }
+
   const args = resolveBackendArgs();
   const modelDir = path.join(app.getPath("userData"), "models");
   log.info(`Spawning backend: ${binary} ${args.join(" ")}`);
@@ -97,6 +182,10 @@ export async function startBackend(): Promise<number> {
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
     env: { ...process.env, WILDLIFE_MODEL_DIR: modelDir },
+  });
+
+  backend.on("error", (err) => {
+    log.error(`Backend spawn error: ${err.message}`);
   });
 
   backend.stdout?.on("data", (b: Buffer) =>
