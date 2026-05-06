@@ -61,14 +61,19 @@ jobs:
       - name: Compute checksums (Linux / macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: cd dist/installers && sha256sum * > SHA256SUMS.txt || true
+        run: |
+          cd dist/installers
+          # Hash only top-level files (skip electron-builder's *-unpacked/ dirs)
+          find . -maxdepth 1 -type f \
+            \( -name "*.AppImage" -o -name "*.deb" -o -name "*.dmg" -o -name "*.zip" \) \
+            -exec sha256sum {} \; > SHA256SUMS.txt
 
       - name: Compute checksums (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Set-Location dist/installers
-          Get-ChildItem -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
+          Get-ChildItem -File -Include *.exe -Recurse:$false | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           } | Set-Content SHA256SUMS.txt
@@ -76,9 +81,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}
+          # Only upload the installer files themselves — electron-builder also
+          # produces *-unpacked/ directories and intermediate yml/blockmap files
+          # that we don't want attached to the release.
           path: |
-            dist/installers/*
+            dist/installers/*.AppImage
+            dist/installers/*.deb
+            dist/installers/*.dmg
+            dist/installers/*.zip
+            dist/installers/*.exe
+            dist/installers/SHA256SUMS.txt
             THIRD_PARTY_LICENSES.txt
+          if-no-files-found: ignore
 
   release:
     needs: build
@@ -92,7 +106,15 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+            artifacts/**/*.exe
+            artifacts/**/SHA256SUMS.txt
+            artifacts/**/THIRD_PARTY_LICENSES.txt
+          fail_on_unmatched_files: false
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
