@@ -163,13 +163,25 @@ function handleBackendExit(code: number | null, signal: string | null): void {
   }
 }
 
-export async function startBackend(): Promise<number> {
+export type BackendStartStage =
+  | "extracting"
+  | "starting"
+  | "loading-model"
+  | "ready";
+
+export interface StartBackendOptions {
+  onStage?: (stage: BackendStartStage) => void;
+}
+
+export async function startBackend(opts: StartBackendOptions = {}): Promise<number> {
+  const onStage = opts.onStage ?? (() => {});
   await fs.rm(portFilePath(), { force: true });
 
   let binary: string;
   if (!app.isPackaged) {
     binary = resolveDevBinary();
   } else {
+    onStage("extracting");
     binary = await ensureBackendExtracted();
   }
 
@@ -178,6 +190,7 @@ export async function startBackend(): Promise<number> {
   log.info(`Spawning backend: ${binary} ${args.join(" ")}`);
   log.info(`Model directory: ${modelDir}`);
 
+  onStage("starting");
   backend = spawn(binary, args, {
     stdio: ["ignore", "pipe", "pipe"],
     detached: false,
@@ -197,9 +210,11 @@ export async function startBackend(): Promise<number> {
   backend.on("exit", handleBackendExit);
 
   backendPort = await waitForPortFile(STARTUP_TIMEOUT_MS);
+  onStage("loading-model");
   await waitForHealth(backendPort, STARTUP_TIMEOUT_MS);
 
   log.info(`Backend ready on port ${backendPort}`);
+  onStage("ready");
   return backendPort;
 }
 
