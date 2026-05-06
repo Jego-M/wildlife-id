@@ -10,11 +10,26 @@ SPEC_FILE="$SCRIPT_DIR/wildlife_backend.spec"
 # means devs can have CUDA torch locally for fast inference while shipped
 # binaries stay slim (no CUDA libs, no nvidia/* packages).
 BUILD_VENV="$REPO_ROOT/.venv-build"
-BUILD_PYTHON="$BUILD_VENV/bin/python"
 
-if [[ ! -x "$BUILD_PYTHON" ]]; then
+# Windows venvs put python at Scripts/python.exe; Unix venvs at bin/python.
+case "${OSTYPE:-}" in
+  msys*|cygwin*|win32*) BUILD_PYTHON="$BUILD_VENV/Scripts/python.exe" ;;
+  *)                    BUILD_PYTHON="$BUILD_VENV/bin/python" ;;
+esac
+
+# Pick the system python: `python3` on Unix/macOS, `python` on Windows runners.
+if command -v python3 >/dev/null 2>&1; then
+  SYS_PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+  SYS_PYTHON=python
+else
+  echo "Error: neither python3 nor python is available" >&2
+  exit 1
+fi
+
+if [[ ! -f "$BUILD_PYTHON" ]]; then
   echo "Creating build venv at $BUILD_VENV..."
-  python3 -m venv "$BUILD_VENV"
+  "$SYS_PYTHON" -m venv "$BUILD_VENV"
 fi
 
 # CUDA torch in the build venv would (a) balloon the bundle by ~1.5 GB and
