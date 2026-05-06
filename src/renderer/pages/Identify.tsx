@@ -507,12 +507,14 @@ function CropStage({ imageUrl, imageFile, imageDims, crop, setCrop, onCancel, on
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         <div ref={stageRef} style={{
-          position: "relative", maxHeight: "100%", width: "100%",
-          maxWidth: 720, borderRadius: 12, overflow: "hidden",
+          position: "relative",
+          aspectRatio: `${imageDims.w} / ${imageDims.h}`,
+          maxWidth: 720, maxHeight: "100%",
+          borderRadius: 12, overflow: "hidden",
           boxShadow: "0 10px 24px -10px rgba(20,30,20,0.25), 0 0 0 0.5px rgba(0,0,0,0.1)",
         }}>
           <img src={imageUrl} alt="" draggable={false} style={{
-            display: "block", width: "100%", height: "auto",
+            display: "block", width: "100%", height: "100%", objectFit: "fill",
           }} />
           <div style={{
             position: "absolute", inset: 0, background: "rgba(15,20,15,0.55)",
