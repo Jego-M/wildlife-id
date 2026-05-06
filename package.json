@@ -15,7 +15,7 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
     "build:backend": "bash build/build_backend.sh",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:backend": "pytest src/backend/",
     "lint": "eslint src",
     "lint:backend": "cd src/backend && ruff check .",
