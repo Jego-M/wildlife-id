@@ -83,10 +83,10 @@ def load_treeoflife_csv(path: Path) -> list[dict]:
     def _common(name: str, lang: str) -> str | None:
         if not name.strip():
             return None
-        langs = [l.strip().lower() for l in lang.split(",")]
+        langs = [lg.strip().lower() for lg in lang.split(",")]
         names = [n.strip() for n in name.split(",")]
-        for i, l in enumerate(langs):
-            if "english" in l and i < len(names) and names[i]:
+        for i, lg in enumerate(langs):
+            if "english" in lg and i < len(names) and names[i]:
                 return names[i]
         return names[0] if names[0] else None
 
